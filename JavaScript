@@ -1,0 +1,55 @@
+// 1. กำหนดค่าการเชื่อมต่อ Supabase
+// (หมายเหตุ: ตัด /rest/v1/ ออกจากท้าย URL เพื่อให้ไลบรารี Supabase JS เรียกใช้งาน Endpoint อื่นๆ เช่น Authentication ได้อย่างถูกต้อง)
+const SUPABASE_URL = 'https://vcbugctmyqubqvabrric.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_SceKfh95c5dbx9hAK3Hhng_9Api0Ynj';
+
+// 2. เริ่มต้นระบบ Supabase Client
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// 3. อ้างอิงถึงส่วนประกอบต่างๆ บนฟอร์ม HTML
+const loginForm = document.getElementById('loginForm');
+const emailInput = document.getElementById('email');
+const passwordInput = document.getElementById('password');
+const errorMessage = document.getElementById('errorMessage');
+
+// 4. ดักจับเหตุการณ์เมื่อผู้ใช้กดปุ่ม "เข้าสู่ระบบ"
+loginForm.addEventListener('submit', async (e) => {
+    e.preventDefault(); // ป้องกันไม่ให้เบราว์เซอร์รีเฟรชหน้าเว็บ
+
+    const email = emailInput.value;
+    const password = passwordInput.value;
+    
+    // เคลียร์ข้อความแจ้งเตือนเก่า และแสดงสถานะกำลังโหลด
+    errorMessage.style.color = 'blue';
+    errorMessage.textContent = 'กำลังตรวจสอบข้อมูล...';
+
+    try {
+        // 5. ส่งคำสั่ง Login ไปยัง Supabase
+        const { data, error } = await supabase.auth.signInWithPassword({
+            email: email,
+            password: password,
+        });
+
+        // 6. ตรวจสอบผลลัพธ์
+        if (error) {
+            // กรณีเข้าสู่ระบบไม่สำเร็จ (เช่น รหัสผ่านผิด หรือไม่มีอีเมลนี้)
+            errorMessage.style.color = 'var(--error-color)';
+            errorMessage.textContent = 'เข้าสู่ระบบไม่สำเร็จ: ข้อมูลไม่ถูกต้อง';
+            console.error('Login Error:', error.message);
+        } else {
+            // กรณีเข้าสู่ระบบสำเร็จ
+            errorMessage.style.color = 'green';
+            errorMessage.textContent = 'เข้าสู่ระบบสำเร็จ! กำลังพาท่านไปยังหน้าหลัก...';
+            
+            // เปลี่ยนหน้าไปยัง Dashboard
+            setTimeout(() => {
+                window.location.href = 'dashboard.html';
+            }, 1000);
+        }
+    } catch (err) {
+        // กรณีเกิดข้อผิดพลาดระดับเครือข่าย
+        errorMessage.style.color = 'var(--error-color)';
+        errorMessage.textContent = 'เกิดข้อผิดพลาดในการเชื่อมต่อระบบ';
+        console.error('System Error:', err);
+    }
+});
