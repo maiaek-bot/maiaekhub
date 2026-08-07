@@ -1,6 +1,6 @@
 // 1. ตั้งค่า Supabase (ใส่ Key ของคุณ)
-const supabaseUrl = 'YOUR_SUPABASE_URL';
-const supabaseKey = 'YOUR_SUPABASE_ANON_KEY';
+const supabaseUrl = 'https://vcbugctmyqubqvabrric.supabase.co/rest/v1/';
+const supabaseKey = 'sb_publishable_SceKfh95c5dbx9hAK3Hhng_9Api0Ynj';
 const supabase = supabase.createClient(supabaseUrl, supabaseKey);
 
 // ฟังก์ชันแปลง Username เป็น Email
