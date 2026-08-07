@@ -1,90 +1,123 @@
-// script.js
-
-// 1. ตั้งค่าการเชื่อมต่อ Supabase
+// 1. ตั้งค่า Supabase (ใส่ Key ของคุณ)
 const supabaseUrl = 'YOUR_SUPABASE_URL';
 const supabaseKey = 'YOUR_SUPABASE_ANON_KEY';
-
-// ตรวจสอบว่าใส่ URL และ KEY แล้วหรือยัง
-if (supabaseUrl === 'YOUR_SUPABASE_URL') {
-    console.error("กรุณาใส่ Supabase URL และ Key ในไฟล์ script.js ของคุณ");
-}
-
 const supabase = supabase.createClient(supabaseUrl, supabaseKey);
 
-// --- ระบบสลับหน้า UI (Toggle) ---
-function showLogin() {
-    const loginForm = document.getElementById('login-form');
-    const registerForm = document.getElementById('register-form');
-    const buttons = document.querySelectorAll('.tabs button');
-    
-    if (loginForm && registerForm) {
-        loginForm.style.display = 'block';
-        registerForm.style.display = 'none';
-        buttons[0].classList.add('active');
-        buttons[1].classList.remove('active');
-    }
-}
+// ฟังก์ชันแปลง Username เป็น Email
+const formatUser = (username) => `${username.toLowerCase()}@myapp.local`;
 
-function showRegister() {
-    const loginForm = document.getElementById('login-form');
-    const registerForm = document.getElementById('register-form');
-    const buttons = document.querySelectorAll('.tabs button');
-    
-    if (loginForm && registerForm) {
-        loginForm.style.display = 'none';
-        registerForm.style.display = 'block';
-        buttons[0].classList.remove('active');
-        buttons[1].classList.add('active');
-    }
-}
-
-// --- ระบบ Auth ---
+// DOM Elements
 const loginForm = document.getElementById('login-form');
 const registerForm = document.getElementById('register-form');
 const dashboard = document.getElementById('dashboard-section');
 const authSection = document.getElementById('auth-section');
+const productForm = document.getElementById('product-form');
 
-// ฟังก์ชันสมัครสมาชิก
-if (registerForm) {
-    registerForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const email = document.getElementById('register-email').value;
-        const password = document.getElementById('register-password').value;
-        
-        const { data, error } = await supabase.auth.signUp({ email, password });
-        if (error) alert('สมัครไม่สำเร็จ: ' + error.message);
-        else alert('สมัครสมาชิกสำเร็จ! โปรดเช็คอีเมลเพื่อยืนยันตัวตน');
+// --- Auth Logic ---
+
+// สมัครสมาชิก
+registerForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const username = document.getElementById('register-email').value;
+    const password = document.getElementById('register-password').value;
+    
+    const { data, error } = await supabase.auth.signUp({ 
+        email: formatUser(username), 
+        password: password 
     });
-}
+    
+    if (error) alert('Error: ' + error.message);
+    else alert('สมัครสมาชิกสำเร็จ!');
+});
 
-// ฟังก์ชันเข้าสู่ระบบ
-if (loginForm) {
-    loginForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const email = document.getElementById('login-email').value;
-        const password = document.getElementById('login-password').value;
-        
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) alert('เข้าสู่ระบบไม่สำเร็จ: ' + error.message);
-        else {
-            alert('เข้าสู่ระบบสำเร็จ!');
-            checkUser();
-        }
+// เข้าสู่ระบบ
+loginForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const username = document.getElementById('login-email').value;
+    const password = document.getElementById('login-password').value;
+    
+    const { data, error } = await supabase.auth.signInWithPassword({ 
+        email: formatUser(username), 
+        password: password 
     });
-}
+    
+    if (error) alert('เข้าสู่ระบบไม่สำเร็จ');
+    else {
+        alert('เข้าสู่ระบบสำเร็จ!');
+        checkUser();
+    }
+});
 
-// ฟังก์ชันตรวจสถานะ Login (Auto-refresh)
+// ตรวจสอบสถานะ
 async function checkUser() {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
         authSection.style.display = 'none';
         dashboard.style.display = 'block';
-        fetchItems(); 
+        fetchItems();
     } else {
         authSection.style.display = 'block';
         dashboard.style.display = 'none';
     }
 }
 
-// เริ่มต้นเช็คสถานะ
+// --- CRUD Logic ---
+
+// เพิ่มข้อมูล
+productForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const itemNo = document.getElementById('item-no').value;
+    const description = document.getElementById('description').value;
+    const uom = document.getElementById('uom').value;
+
+    const { error } = await supabase.from('items').insert([{ item_no: itemNo, description, uom }]);
+    if (error) alert('Error: ' + error.message);
+    else {
+        productForm.reset();
+        fetchItems();
+    }
+});
+
+// ดึงข้อมูล
+async function fetchItems() {
+    const { data, error } = await supabase.from('items').select('*');
+    if (error) console.error(error);
+    else {
+        const tbody = document.getElementById('product-list');
+        tbody.innerHTML = '';
+        data.forEach(item => {
+            tbody.innerHTML += `<tr>
+                <td>${item.item_no}</td>
+                <td>${item.description}</td>
+                <td>${item.uom}</td>
+                <td><button onclick="deleteItem('${item.id}')" class="btn-danger">ลบ</button></td>
+            </tr>`;
+        });
+    }
+}
+
+// ลบข้อมูล
+async function deleteItem(id) {
+    const { error } = await supabase.from('items').delete().eq('id', id);
+    if (error) alert('คุณไม่มีสิทธิ์ลบ!');
+    else fetchItems();
+}
+
+// Logout
+document.getElementById('logout-btn').addEventListener('click', async () => {
+    await supabase.auth.signOut();
+    location.reload();
+});
+
+// Toggle UI
+function showLogin() {
+    loginForm.style.display = 'block';
+    registerForm.style.display = 'none';
+}
+function showRegister() {
+    loginForm.style.display = 'none';
+    registerForm.style.display = 'block';
+}
+
+// เริ่มต้นเช็คสถานะทันที
 checkUser();
