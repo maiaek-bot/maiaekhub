@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>maiaekhub - Inventory & Procurement</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Supabase JS Library -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <!-- Auth Section -->
+    <div id="auth-section" class="container">
+        <h2>maiaekhub - เข้าสู่ระบบ</h2>
+        <div class="tabs">
+            <button onclick="showLogin()" class="active">เข้าสู่ระบบ</button>
+            <button onclick="showRegister()">สมัครสมาชิก</button>
+        </div>
+        
+        <form id="login-form">
+            <input type="email" id="login-email" placeholder="อีเมล" required>
+            <input type="password" id="login-password" placeholder="รหัสผ่าน" required>
+            <button type="submit">Login</button>
+        </form>
+
+        <form id="register-form" style="display: none;">
+            <input type="email" id="register-email" placeholder="อีเมล" required>
+            <input type="password" id="register-password" placeholder="รหัสผ่าน" required>
+            <button type="submit">Register (ระดับ User)</button>
+        </form>
+    </div>
+
+    <!-- Dashboard Section (Hidden by default) -->
+    <div id="dashboard-section" class="container" style="display: none;">
+        <div class="header">
+            <h2>จัดการข้อมูลสินค้า - maiaekhub</h2>
+            <button id="logout-btn" class="btn-danger">ออกจากระบบ</button>
+        </div>
+        
+        <!-- Add Data Form -->
+        <div class="form-group">
+            <h3>เพิ่ม / แก้ไข ข้อมูลสินค้า</h3>
+            <form id="product-form">
+                <input type="hidden" id="product-id">
+                <input type="text" id="item-no" placeholder="ItemNo. (เช่น 3MXXK02000508)" required>
+                <input type="text" id="description" placeholder="Description (ชื่อสินค้า)" required>
+                <input type="text" id="uom" placeholder="UoM Group (หน่วย เช่น ชิ้น, อัน)" required>
+                <button type="submit" class="btn-success">บันทึกข้อมูล</button>
+            </form>
+        </div>
+
+        <!-- Data Table -->
+        <table id="product-table">
+            <thead>
+                <tr>
+                    <th>ItemNo.</th>
+                    <th>Description</th>
+                    <th>UoM</th>
+                    <th>จัดการ</th>
+                </tr>
+            </thead>
+            <tbody id="product-list">
+                <!-- Data will be populated here via JS -->
+            </tbody>
+        </table>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
