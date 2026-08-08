@@ -22,7 +22,7 @@ try {
 
 // ---------- State ----------
 let currentUser = null;      // auth user object
-let currentProfile = null;   // { id, username, role }
+let currentProfile = null;   // { id, username, role, email }
 let allProducts = [];        // cached product list
 let editingProductId = null; // null = adding new, string = editing existing
 let pendingDeleteProduct = null;
@@ -144,21 +144,23 @@ async function onLoginSubmit(e) {
   btn.disabled = true;
 
   try {
-    // Login รับได้ทั้ง username หรือ email — ถ้าไม่มี @ ให้ค้นหา email จาก profiles ก่อน
+    // Login รับได้ทั้ง username หรือ email — ถ้าไม่มี @ ให้ค้นหา email จริงจาก profiles ก่อน
     let email = usernameOrEmail;
     if (!usernameOrEmail.includes('@')) {
       const { data: profileRow, error: lookupErr } = await sb
         .from('profiles')
-        .select('id, username')
+        .select('id, username, email')
         .eq('username', usernameOrEmail)
         .maybeSingle();
 
       if (lookupErr || !profileRow) {
         throw new Error('ไม่พบชื่อผู้ใช้นี้ในระบบ');
       }
-      // ต้องใช้ email login กับ Supabase Auth — เก็บ email ไว้ในของฟอร์ม register ตอนสมัคร
-      // เพื่อความง่าย เราขอให้ email = username@maiaekhub.local ถ้าผู้ใช้ไม่ได้ตั้ง email เอง
-      email = profileRow.username.includes('@') ? profileRow.username : `${usernameOrEmail}@maiaekhub.local`;
+      if (!profileRow.email) {
+        throw new Error('บัญชีนี้ไม่มีอีเมลผูกอยู่ กรุณาติดต่อผู้ดูแลระบบ');
+      }
+      // ใช้ email จริงที่ผูกไว้กับ username ตอนสมัคร (เก็บในคอลัมน์ profiles.email)
+      email = profileRow.email;
     }
 
     const { data, error } = await sb.auth.signInWithPassword({ email, password });
@@ -210,9 +212,18 @@ async function onRegisterSubmit(e) {
     const { data, error } = await sb.auth.signUp({
       email,
       password,
-      options: { data: { username } }
+      options: { data: { username, email } }
     });
     if (error) throw error;
+
+    // เก็บ/อัปเดต email ลงตาราง profiles ทันทีที่มี user id
+    // (เผื่อ trigger สร้าง row profiles อัตโนมัติแต่ไม่ได้ใส่ email มาให้)
+    if (data.user) {
+      await sb
+        .from('profiles')
+        .update({ email })
+        .eq('id', data.user.id);
+    }
 
     if (data.session) {
       // ไม่ต้องยืนยันอีเมล — เข้าระบบได้ทันที
@@ -244,7 +255,7 @@ async function handleSignedIn(user) {
 
   const { data: profile, error } = await sb
     .from('profiles')
-    .select('id, username, role')
+    .select('id, username, role, email')
     .eq('id', user.id)
     .maybeSingle();
 
@@ -253,6 +264,12 @@ async function handleSignedIn(user) {
     await sb.auth.signOut();
     showAuthScreen();
     return;
+  }
+
+  // เผื่อ profile เก่ายังไม่มี email ผูกอยู่ (บัญชีที่สมัครก่อนอัปเดตระบบนี้) ให้เติมให้อัตโนมัติ
+  if (!profile.email && user.email) {
+    await sb.from('profiles').update({ email: user.email }).eq('id', user.id);
+    profile.email = user.email;
   }
 
   currentProfile = profile;
