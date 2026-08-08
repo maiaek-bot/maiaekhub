@@ -1,8 +1,0 @@
-body { font-family: sans-serif; padding: 20px; }
-.tabs { margin-bottom: 20px; }
-.tabs button.active { font-weight: bold; }
-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-table, th, td { border: 1px solid #ccc; padding: 10px; }
-form { margin-bottom: 20px; }
-input { display: block; margin-bottom: 10px; padding: 8px; width: 200px; }
-.btn-danger { color: red; cursor: pointer; }
