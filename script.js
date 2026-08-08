@@ -46,6 +46,7 @@ async function init() {
   bindAppEvents();
   bindModalEvents();
   bindImportEvents();
+  bindProfileEvents();
 
   showAuthScreen();
 
@@ -256,7 +257,7 @@ async function handleSignedIn(user) {
 
   const { data: profile, error } = await sb
     .from('profiles')
-    .select('id, username, role, email')
+    .select('id, username, role, email, display_name, avatar_url')
     .eq('id', user.id)
     .maybeSingle();
 
@@ -284,8 +285,24 @@ function roleLabel(role) {
 }
 
 function applyRolePermissions() {
-  $('userBadge').innerHTML = `<span class="role-dot"></span>${escapeHtml(currentProfile.username)} · ${roleLabel(currentProfile.role)}`;
+  const nameToShow = currentProfile.display_name || currentProfile.username;
+  $('userBadge').innerHTML = `<span class="role-dot"></span>${escapeHtml(nameToShow)} · ${roleLabel(currentProfile.role)}`;
   $('historyBtn').hidden = !(currentProfile.role === 'owner' || currentProfile.role === 'admin');
+  renderHeaderAvatar();
+}
+
+function renderHeaderAvatar() {
+  const img = $('profileAvatarImg');
+  const fallback = $('profileAvatarFallback');
+  if (currentProfile.avatar_url) {
+    img.src = currentProfile.avatar_url;
+    img.hidden = false;
+    fallback.hidden = true;
+  } else {
+    img.hidden = true;
+    fallback.hidden = false;
+    fallback.textContent = (currentProfile.display_name || currentProfile.username || 'M').charAt(0).toUpperCase();
+  }
 }
 
 function canDelete() {
@@ -433,6 +450,7 @@ function bindModalEvents() {
       closeDeleteModal();
       closeHistoryModal();
       closeImportModal();
+      closeProfileModal();
     }
   });
 }
@@ -939,6 +957,137 @@ async function onConfirmImport() {
     await loadProducts();
   } catch (err) {
     setFieldError($('importResultError'), 'นำเข้าไม่สำเร็จ: ' + (err.message || 'เกิดข้อผิดพลาด'));
+  } finally {
+    btn.classList.remove('is-loading');
+    btn.disabled = false;
+  }
+}
+
+// ==================================================
+// Profile Edit (display name + avatar)
+// ==================================================
+const AVATAR_MAX_BYTES = 2 * 1024 * 1024; // 2MB
+let pendingAvatarFile = null; // ไฟล์รูปที่เลือกไว้ แต่ยังไม่อัปโหลดจนกว่าจะกด "บันทึก"
+
+function bindProfileEvents() {
+  $('profileAvatarBtn').addEventListener('click', openProfileModal);
+  $('closeProfileModal').addEventListener('click', closeProfileModal);
+  $('cancelProfileForm').addEventListener('click', closeProfileModal);
+  $('profileModal').addEventListener('click', (e) => { if (e.target === $('profileModal')) closeProfileModal(); });
+
+  $('profileAvatarInput').addEventListener('change', onProfileAvatarSelected);
+  $('profileForm').addEventListener('submit', onSaveProfile);
+}
+
+function openProfileModal() {
+  pendingAvatarFile = null;
+  setFieldError($('profileFormError'), '');
+  $('fDisplayName').value = currentProfile.display_name || '';
+
+  renderProfilePreview(currentProfile.avatar_url, currentProfile.display_name || currentProfile.username);
+
+  $('profileModal').hidden = false;
+  $('profileModal').classList.add('is-visible');
+}
+
+function closeProfileModal() {
+  $('profileModal').classList.remove('is-visible');
+  $('profileModal').hidden = true;
+  pendingAvatarFile = null;
+  $('profileAvatarInput').value = '';
+}
+
+function renderProfilePreview(avatarUrl, nameForFallback) {
+  const img = $('profileAvatarPreviewImg');
+  const fallback = $('profileAvatarPreviewFallback');
+  if (avatarUrl) {
+    img.src = avatarUrl;
+    img.hidden = false;
+    fallback.hidden = true;
+  } else {
+    img.hidden = true;
+    fallback.hidden = false;
+    fallback.textContent = (nameForFallback || 'M').charAt(0).toUpperCase();
+  }
+}
+
+function onProfileAvatarSelected(e) {
+  const file = e.target.files[0];
+  const errorEl = $('profileFormError');
+  setFieldError(errorEl, '');
+  if (!file) return;
+
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+    setFieldError(errorEl, 'รองรับเฉพาะไฟล์ JPG, PNG, WEBP เท่านั้น');
+    $('profileAvatarInput').value = '';
+    return;
+  }
+  if (file.size > AVATAR_MAX_BYTES) {
+    setFieldError(errorEl, 'ไฟล์ใหญ่เกินไป (สูงสุด 2MB)');
+    $('profileAvatarInput').value = '';
+    return;
+  }
+
+  pendingAvatarFile = file;
+  // แสดงตัวอย่างรูปทันทีจากไฟล์ในเครื่อง (ยังไม่อัปโหลดจนกว่าจะกดบันทึก)
+  const reader = new FileReader();
+  reader.onload = (evt) => {
+    const img = $('profileAvatarPreviewImg');
+    img.src = evt.target.result;
+    img.hidden = false;
+    $('profileAvatarPreviewFallback').hidden = true;
+  };
+  reader.readAsDataURL(file);
+}
+
+async function onSaveProfile(e) {
+  e.preventDefault();
+  const errorEl = $('profileFormError');
+  const btn = $('saveProfileBtn');
+  setFieldError(errorEl, '');
+
+  const displayName = $('fDisplayName').value.trim();
+
+  btn.classList.add('is-loading');
+  btn.disabled = true;
+
+  try {
+    let avatarUrl = currentProfile.avatar_url || null;
+
+    if (pendingAvatarFile) {
+      // เก็บไฟล์ใต้โฟลเดอร์ {user_id}/ ตามที่ storage policy กำหนดไว้
+      const ext = pendingAvatarFile.name.split('.').pop().toLowerCase();
+      const path = `${currentUser.id}/avatar.${ext}`;
+
+      const { error: uploadError } = await sb.storage
+        .from('avatars')
+        .upload(path, pendingAvatarFile, { upsert: true, cacheControl: '3600' });
+      if (uploadError) throw uploadError;
+
+      const { data: publicUrlData } = sb.storage.from('avatars').getPublicUrl(path);
+      // ต่อ query string กันแคชรูปเก่าค้างในเบราว์เซอร์
+      avatarUrl = `${publicUrlData.publicUrl}?v=${Date.now()}`;
+    }
+
+    const payload = {
+      display_name: displayName || null,
+      avatar_url: avatarUrl,
+    };
+
+    const { data, error } = await sb
+      .from('profiles')
+      .update(payload)
+      .eq('id', currentUser.id)
+      .select('id, username, role, email, display_name, avatar_url')
+      .single();
+    if (error) throw error;
+
+    currentProfile = data;
+    applyRolePermissions();
+    showToast('บันทึกโปรไฟล์สำเร็จ', 'success');
+    closeProfileModal();
+  } catch (err) {
+    setFieldError(errorEl, err.message || 'บันทึกโปรไฟล์ไม่สำเร็จ');
   } finally {
     btn.classList.remove('is-loading');
     btn.disabled = false;
