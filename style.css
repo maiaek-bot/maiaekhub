@@ -808,3 +808,271 @@ img.profile-avatar-preview { display: block; }
   color: var(--text-dim);
   margin-top: 4px;
 }
+
+/* ==================================================
+   View Tabs (สินค้า / ขอราคา)
+   ================================================== */
+.view-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 10px 20px 0;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border-soft);
+  position: sticky;
+  top: 65px;
+  z-index: 40;
+  overflow-x: auto;
+}
+.view-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.view-tab:hover { color: var(--text); }
+.view-tab.is-active { color: var(--accent); border-bottom-color: var(--accent); }
+.view-tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+}
+
+/* ==================================================
+   Price Requests — filter chips
+   ================================================== */
+.pr-filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex: 1;
+}
+.pr-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 16px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.pr-filter-chip:hover { border-color: var(--text-faint); color: var(--text); }
+.pr-filter-chip.is-active {
+  background: var(--accent-soft);
+  border-color: var(--accent-dim);
+  color: var(--accent);
+}
+
+/* ==================================================
+   Price Requests — source picker (in modal)
+   ================================================== */
+.pr-source-picker {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.pr-source-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex: 1;
+  min-width: 120px;
+  justify-content: center;
+}
+.pr-source-opt:hover { border-color: var(--text-faint); color: var(--text); }
+.pr-source-opt.is-selected {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ==================================================
+   Price Requests — card list
+   ================================================== */
+.pr-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pr-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px 18px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  border-left: 3px solid var(--border);
+  transition: border-color 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
+}
+.pr-card:hover {
+  border-color: var(--border);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+}
+.pr-card[data-status="pending"] { border-left-color: var(--warn); }
+.pr-card[data-status="in_progress"] { border-left-color: #5c9ee8; }
+.pr-card[data-status="done"] { border-left-color: var(--accent); opacity: 0.72; }
+
+.pr-card-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pr-card-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.pr-card-date {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.pr-source-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--bg-elevated);
+  color: var(--text-dim);
+  border: 1px solid var(--border-soft);
+}
+.pr-source-tag svg { width: 11px; height: 11px; flex-shrink: 0; }
+
+.pr-card-by {
+  font-size: 13px;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+.pr-card-by::before { content: '· '; color: var(--text-faint); }
+
+.pr-card-details {
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--text);
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.pr-card-notes {
+  font-size: 13px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  padding: 8px 10px;
+  background: var(--bg-elevated);
+  border-radius: var(--radius-sm);
+  border-left: 2px solid var(--border);
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.pr-card-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.pr-status-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  border: 1px solid transparent;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+.pr-status-btn:active { transform: scale(0.96); }
+.pr-status-btn::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+.pr-status-btn[data-status="pending"] {
+  background: rgba(232, 185, 92, 0.12);
+  color: var(--warn);
+  border-color: rgba(232, 185, 92, 0.3);
+}
+.pr-status-btn[data-status="in_progress"] {
+  background: rgba(92, 158, 232, 0.12);
+  color: #5c9ee8;
+  border-color: rgba(92, 158, 232, 0.3);
+}
+.pr-status-btn[data-status="done"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: rgba(53, 208, 168, 0.3);
+}
+
+.pr-card-actions {
+  display: flex;
+  gap: 4px;
+}
+.pr-card-actions .btn-icon {
+  width: 30px;
+  min-height: 30px;
+  border-radius: var(--radius-sm);
+  color: var(--text-faint);
+}
+.pr-card-actions .btn-icon:hover { color: var(--text); border-color: var(--text-faint); }
+.pr-card-actions .btn-icon.danger:hover { color: var(--danger); border-color: var(--danger); }
+
+@media (max-width: 640px) {
+  .pr-card { flex-direction: column; }
+  .pr-card-side { flex-direction: row; align-items: center; width: 100%; justify-content: space-between; }
+}
