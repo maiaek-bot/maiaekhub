@@ -1439,6 +1439,7 @@ function renderPriceRequests() {
           <span class="pr-card-by">${escapeHtml(r.requested_by)}</span>
         </div>
         <div class="pr-card-details">${escapeHtml(r.details)}</div>
+        ${r.vendor ? `<div class="pr-card-vendor"><span class="pr-card-vendor-label">Vendor</span> ${escapeHtml(r.vendor)}</div>` : ''}
         ${r.notes ? `<div class="pr-card-notes">${escapeHtml(r.notes)}</div>` : ''}
       </div>
       <div class="pr-card-side">
@@ -1525,6 +1526,7 @@ function openPrModal(prId) {
     setPrDate(r.request_date || todayIso());
     $('fPrRequestedBy').value = r.requested_by || '';
     $('fPrDetails').value = r.details || '';
+    $('fPrVendor').value = r.vendor || '';
     $('fPrNotes').value = r.notes || '';
     $('fPrSource').value = r.source || '';
     selectedPrSource = r.source || null;
@@ -1560,6 +1562,7 @@ function readPriceRequestForm() {
     requested_by: $('fPrRequestedBy').value.trim(),
     source: $('fPrSource').value,
     details: $('fPrDetails').value.trim(),
+    vendor: $('fPrVendor').value.trim() || null,
     notes: $('fPrNotes').value.trim() || null,
   };
 }
