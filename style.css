@@ -1315,7 +1315,7 @@ img.profile-avatar-preview { display: block; }
   border-radius: 10px;
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
   padding: 6px;
-  z-index: 50;
+  z-index: 100;
 }
 .nav-dropdown-item {
   display: flex;
