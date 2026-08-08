@@ -6,7 +6,7 @@
 // สำคัญ: ห้ามให้ error ตรงนี้ทำให้ script.js ทั้งไฟล์หยุดทำงาน
 // (เดิมถ้า Supabase library โหลดไม่สำเร็จ บรรทัดนี้จะ throw แบบ synchronous
 //  แล้วโค้ดทุกอย่างข้างล่างจะไม่ถูกรันเลย รวมถึงปุ่ม/แท็บทั้งหมดในหน้าเว็บ)
-const supabaseUrl = 'https://vcbugctmyqubqvabrric.supabase.co/rest/v1/';
+const supabaseUrl = 'https://vcbugctmyqubqvabrric.supabase.co';
 const supabaseKey = 'sb_publishable_SceKfh95c5dbx9hAK3Hhng_9Api0Ynj';
 let sb = null;
 let supabaseInitError = null;
