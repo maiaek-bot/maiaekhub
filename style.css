@@ -444,25 +444,27 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
-  margin-left: 6px;
+  width: 16px;
+  height: 16px;
+  margin-left: 5px;
   padding: 0;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 4px;
   background: var(--bg-elevated);
   color: var(--text-faint);
   cursor: pointer;
   vertical-align: middle;
+  flex-shrink: 0;
   transition: transform 0.15s ease, color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
 }
+.copy-btn svg { width: 10px; height: 10px; }
 .copy-btn:hover {
-  transform: scale(1.18);
+  transform: scale(1.25);
   color: var(--accent);
   border-color: var(--accent-dim);
   background: var(--accent-soft);
 }
-.copy-btn:active { transform: scale(1.05); }
+.copy-btn:active { transform: scale(1.1); }
 .copy-btn.is-copied {
   color: var(--accent);
   border-color: var(--accent);
