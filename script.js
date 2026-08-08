@@ -381,7 +381,9 @@ function bindViewTabs() {
   });
 
   document.addEventListener('click', (e) => {
-    if (!$('toolsDropdown').contains(e.target)) closeToolsDropdown();
+    const insideTrigger = $('toolsDropdown').contains(e.target);
+    const insideMenu = $('toolsDropdownMenu').contains(e.target);
+    if (!insideTrigger && !insideMenu) closeToolsDropdown();
   });
 }
 
@@ -391,15 +393,37 @@ function toggleToolsDropdown() {
 }
 
 function openToolsDropdown() {
+  const btn = $('toolsDropdownBtn');
+  const menu = $('toolsDropdownMenu');
+
   $('toolsDropdown').classList.add('is-open');
-  $('toolsDropdownMenu').hidden = false;
-  $('toolsDropdownBtn').setAttribute('aria-expanded', 'true');
+  menu.hidden = false;
+  btn.setAttribute('aria-expanded', 'true');
+
+  // .view-tabs มี overflow-x: auto ซึ่งจะตัด dropdown menu ที่เป็น position:absolute
+  // ทิ้งไป — ย้าย menu ไปแปะที่ <body> แล้วคำนวณตำแหน่งเอง เพื่อไม่ให้โดน clip
+  const rect = btn.getBoundingClientRect();
+  menu.style.position = 'fixed';
+  menu.style.top = (rect.bottom + 6) + 'px';
+  menu.style.left = rect.left + 'px';
+  document.body.appendChild(menu);
 }
 
 function closeToolsDropdown() {
-  $('toolsDropdown').classList.remove('is-open');
-  $('toolsDropdownMenu').hidden = true;
+  const dropdown = $('toolsDropdown');
+  const menu = $('toolsDropdownMenu');
+
+  dropdown.classList.remove('is-open');
+  menu.hidden = true;
   $('toolsDropdownBtn').setAttribute('aria-expanded', 'false');
+
+  // ย้าย menu กลับเข้าที่เดิมใน DOM (ในกล่อง .nav-dropdown)
+  if (menu.parentElement !== dropdown) {
+    menu.style.position = '';
+    menu.style.top = '';
+    menu.style.left = '';
+    dropdown.appendChild(menu);
+  }
 }
 
 function switchView(view) {
