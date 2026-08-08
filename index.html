@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>MaiaekHub — จัดการสินค้าและราคา</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
@@ -75,7 +76,10 @@
 
   <header class="app-header">
     <div class="app-header-left">
-      <span class="brand-mark brand-mark-sm">M</span>
+      <button id="profileAvatarBtn" class="profile-avatar-btn" title="แก้ไขโปรไฟล์" aria-label="แก้ไขโปรไฟล์">
+        <span id="profileAvatarFallback" class="brand-mark brand-mark-sm">M</span>
+        <img id="profileAvatarImg" class="profile-avatar-img" alt="" hidden>
+      </button>
       <h1 class="app-title">MaiaekHub</h1>
     </div>
     <div class="app-header-right">
@@ -282,6 +286,45 @@
         <span class="btn-label">ยืนยันนำเข้า</span>
       </button>
     </div>
+  </div>
+</div>
+
+<!-- ============ PROFILE EDIT MODAL ============ -->
+<div id="profileModal" class="modal-overlay" hidden>
+  <div class="modal modal-sm" role="dialog" aria-modal="true" aria-labelledby="profileModalTitle">
+    <div class="modal-header">
+      <h2 id="profileModalTitle">แก้ไขโปรไฟล์</h2>
+      <button class="btn-close" id="closeProfileModal" aria-label="ปิด">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <form id="profileForm" class="modal-body">
+      <div class="profile-avatar-edit">
+        <div class="profile-avatar-preview-wrap">
+          <span id="profileAvatarPreviewFallback" class="brand-mark profile-avatar-preview">M</span>
+          <img id="profileAvatarPreviewImg" class="profile-avatar-preview" alt="" hidden>
+        </div>
+        <label class="btn btn-ghost" for="profileAvatarInput" style="cursor:pointer;">
+          เลือกรูปใหม่
+          <input type="file" id="profileAvatarInput" accept="image/png,image/jpeg,image/webp" style="display:none;">
+        </label>
+        <p class="field-hint">รองรับ JPG, PNG, WEBP ขนาดไม่เกิน 2MB</p>
+      </div>
+
+      <label class="field">
+        <span class="field-label">ชื่อที่แสดง</span>
+        <input type="text" id="fDisplayName" placeholder="เช่น ไอเอก" maxlength="40">
+        <span class="field-hint">ใช้แสดงในระบบเท่านั้น ไม่ใช่ชื่อผู้ใช้ที่ใช้ล็อกอิน</span>
+      </label>
+
+      <p id="profileFormError" class="field-error" role="alert"></p>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" id="cancelProfileForm">ยกเลิก</button>
+        <button type="submit" class="btn btn-primary" id="saveProfileBtn">
+          <span class="btn-label">บันทึก</span>
+        </button>
+      </div>
+    </form>
   </div>
 </div>
 
