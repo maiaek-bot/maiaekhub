@@ -27,6 +27,13 @@ let allProducts = [];        // cached product list
 let editingProductId = null; // null = adding new, string = editing existing
 let pendingDeleteProduct = null;
 
+let allPriceRequests = [];       // cached price request list
+let priceRequestsLoaded = false; // lazy-load: fetch only when tab first opened
+let editingPrId = null;          // null = adding new, string = editing existing
+let pendingDeletePr = null;
+let currentPrFilter = 'all';     // 'all' | 'pending' | 'in_progress' | 'done'
+let selectedPrSource = null;     // 'personal_chat' | 'group_chat' | 'cs_group'
+
 // ---------- DOM refs ----------
 const $ = (id) => document.getElementById(id);
 
@@ -47,6 +54,8 @@ async function init() {
   bindModalEvents();
   bindImportEvents();
   bindProfileEvents();
+  bindViewTabs();
+  bindPriceRequestEvents();
 
   showAuthScreen();
 
@@ -246,6 +255,9 @@ async function onRegisterSubmit(e) {
 
 async function onLogout() {
   await sb.auth.signOut();
+  allPriceRequests = [];
+  priceRequestsLoaded = false;
+  currentPrFilter = 'all';
   showAuthScreen();
 }
 
@@ -337,6 +349,30 @@ function debounce(fn, wait) {
     clearTimeout(t);
     t = setTimeout(() => fn(...args), wait);
   };
+}
+
+// ==================================================
+// View tabs (สินค้า / ขอราคา)
+// ==================================================
+function bindViewTabs() {
+  document.querySelectorAll('.view-tab').forEach(tab => {
+    tab.addEventListener('click', () => switchView(tab.dataset.view));
+  });
+}
+
+function switchView(view) {
+  document.querySelectorAll('.view-tab').forEach(tab => {
+    const active = tab.dataset.view === view;
+    tab.classList.toggle('is-active', active);
+    tab.setAttribute('aria-selected', String(active));
+  });
+
+  $('productsView').hidden = view !== 'products';
+  $('priceRequestsView').hidden = view !== 'priceRequests';
+
+  if (view === 'priceRequests' && !priceRequestsLoaded) {
+    loadPriceRequests();
+  }
 }
 
 // ==================================================
@@ -1120,6 +1156,345 @@ async function onSaveProfile(e) {
     closeProfileModal();
   } catch (err) {
     setFieldError(errorEl, err.message || 'บันทึกโปรไฟล์ไม่สำเร็จ');
+  } finally {
+    btn.classList.remove('is-loading');
+    btn.disabled = false;
+  }
+}
+
+// ==================================================
+// Price Requests (งานขอราคา)
+// ==================================================
+const PR_SOURCE_LABEL = {
+  personal_chat: 'แชทส่วนตัว',
+  group_chat: 'กลุ่ม',
+  cs_group: 'กลุ่ม CS',
+};
+const PR_SOURCE_ICON = {
+  personal_chat: '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+  group_chat: '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+  cs_group: '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>',
+};
+const PR_STATUS_LABEL = { pending: 'รอดำเนินการ', in_progress: 'กำลังทำ', done: 'เสร็จแล้ว' };
+const PR_STATUS_CYCLE = { pending: 'in_progress', in_progress: 'done', done: 'pending' };
+
+function bindPriceRequestEvents() {
+  $('addPriceRequestBtn').addEventListener('click', () => openPrModal(null));
+
+  document.querySelectorAll('.pr-filter-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      currentPrFilter = chip.dataset.status;
+      document.querySelectorAll('.pr-filter-chip').forEach(c => {
+        c.classList.toggle('is-active', c === chip);
+        c.setAttribute('aria-selected', String(c === chip));
+      });
+      renderPriceRequests();
+    });
+  });
+
+  document.querySelectorAll('.pr-source-opt').forEach(opt => {
+    opt.addEventListener('click', () => {
+      selectedPrSource = opt.dataset.source;
+      $('fPrSource').value = selectedPrSource;
+      document.querySelectorAll('.pr-source-opt').forEach(o => {
+        o.classList.toggle('is-selected', o === opt);
+        o.setAttribute('aria-checked', String(o === opt));
+      });
+    });
+  });
+
+  $('closePrModal').addEventListener('click', closePrModal);
+  $('cancelPrForm').addEventListener('click', closePrModal);
+  $('priceRequestForm').addEventListener('submit', onSavePriceRequest);
+  $('priceRequestModal').addEventListener('click', (e) => { if (e.target === $('priceRequestModal')) closePrModal(); });
+
+  $('closeDeletePrModal').addEventListener('click', closeDeletePrModal);
+  $('cancelDeletePr').addEventListener('click', closeDeletePrModal);
+  $('confirmDeletePr').addEventListener('click', onConfirmDeletePr);
+  $('deletePrModal').addEventListener('click', (e) => { if (e.target === $('deletePrModal')) closeDeletePrModal(); });
+
+  $('priceRequestList').addEventListener('click', onPrListClick);
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      closePrModal();
+      closeDeletePrModal();
+    }
+  });
+}
+
+async function loadPriceRequests() {
+  $('prLoadingState').style.display = 'flex';
+  $('prEmptyState').hidden = true;
+
+  const { data, error } = await sb
+    .from('price_requests')
+    .select('*')
+    .order('request_date', { ascending: false })
+    .order('created_at', { ascending: false });
+
+  $('prLoadingState').style.display = 'none';
+  priceRequestsLoaded = true;
+
+  if (error) {
+    showToast('โหลดข้อมูลงานขอราคาไม่สำเร็จ: ' + error.message, 'error');
+    allPriceRequests = [];
+  } else {
+    allPriceRequests = data || [];
+  }
+  renderPriceRequests();
+}
+
+function updatePrTabBadge() {
+  const pending = allPriceRequests.filter(r => r.status !== 'done').length;
+  const badge = $('prTabBadge');
+  if (pending > 0) {
+    badge.textContent = pending > 99 ? '99+' : String(pending);
+    badge.hidden = false;
+  } else {
+    badge.hidden = true;
+  }
+}
+
+function renderPriceRequests() {
+  const filtered = currentPrFilter === 'all'
+    ? allPriceRequests
+    : allPriceRequests.filter(r => r.status === currentPrFilter);
+
+  const list = $('priceRequestList');
+  list.innerHTML = '';
+
+  updatePrTabBadge();
+
+  if (filtered.length === 0) {
+    $('prEmptyState').hidden = false;
+    $('prEmptyStateText').textContent = currentPrFilter === 'all'
+      ? 'ยังไม่มีงานขอราคา — เริ่มเพิ่มงานแรก'
+      : `ไม่มีงานสถานะ "${PR_STATUS_LABEL[currentPrFilter]}"`;
+    return;
+  }
+  $('prEmptyState').hidden = true;
+
+  const canDel = canDelete();
+  const frag = document.createDocumentFragment();
+
+  filtered.forEach(r => {
+    const card = document.createElement('div');
+    card.className = 'pr-card';
+    card.dataset.status = r.status;
+    card.dataset.id = r.id;
+
+    card.innerHTML = `
+      <div class="pr-card-main">
+        <div class="pr-card-top">
+          <span class="pr-card-date">${formatPrDate(r.request_date)}</span>
+          <span class="pr-source-tag">${PR_SOURCE_ICON[r.source] || ''}${escapeHtml(PR_SOURCE_LABEL[r.source] || r.source)}</span>
+          <span class="pr-card-by">${escapeHtml(r.requested_by)}</span>
+        </div>
+        <div class="pr-card-details">${escapeHtml(r.details)}</div>
+        ${r.notes ? `<div class="pr-card-notes">${escapeHtml(r.notes)}</div>` : ''}
+      </div>
+      <div class="pr-card-side">
+        <button type="button" class="pr-status-btn" data-status="${r.status}" data-action="cycle-status" data-id="${r.id}" title="กดเพื่อเปลี่ยนสถานะ">
+          ${escapeHtml(PR_STATUS_LABEL[r.status] || r.status)}
+        </button>
+        <div class="pr-card-actions">
+          <button type="button" class="btn btn-ghost btn-icon" data-action="edit" data-id="${r.id}" title="แก้ไข" aria-label="แก้ไขงานขอราคา">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+          </button>
+          ${canDel ? `
+          <button type="button" class="btn btn-ghost btn-icon danger" data-action="delete" data-id="${r.id}" title="ลบ" aria-label="ลบงานขอราคา">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+          </button>` : ''}
+        </div>
+      </div>
+    `;
+    frag.appendChild(card);
+  });
+
+  list.appendChild(frag);
+}
+
+function formatPrDate(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr + 'T00:00:00');
+  if (isNaN(d.getTime())) return dateStr;
+  return d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function onPrListClick(e) {
+  const btn = e.target.closest('button[data-action]');
+  if (!btn) return;
+  const id = btn.dataset.id;
+  const action = btn.dataset.action;
+
+  if (action === 'edit') {
+    openPrModal(id);
+  } else if (action === 'delete') {
+    openDeletePrModal(id);
+  } else if (action === 'cycle-status') {
+    cyclePrStatus(id);
+  }
+}
+
+async function cyclePrStatus(id) {
+  const req = allPriceRequests.find(r => r.id === id);
+  if (!req) return;
+  const nextStatus = PR_STATUS_CYCLE[req.status] || 'pending';
+
+  // อัปเดต UI ทันทีเพื่อความลื่นไหล แล้วค่อยยืนยันกับเซิร์ฟเวอร์ (revert ถ้าพลาด)
+  const prevStatus = req.status;
+  req.status = nextStatus;
+  renderPriceRequests();
+
+  const { error } = await sb
+    .from('price_requests')
+    .update({ status: nextStatus, updated_by: currentUser.id })
+    .eq('id', id);
+
+  if (error) {
+    req.status = prevStatus;
+    renderPriceRequests();
+    showToast('เปลี่ยนสถานะไม่สำเร็จ: ' + error.message, 'error');
+  }
+}
+
+function openPrModal(prId) {
+  editingPrId = prId;
+  setFieldError($('priceRequestFormError'), '');
+  selectedPrSource = null;
+
+  document.querySelectorAll('.pr-source-opt').forEach(o => {
+    o.classList.remove('is-selected');
+    o.setAttribute('aria-checked', 'false');
+  });
+
+  if (prId) {
+    const r = allPriceRequests.find(x => x.id === prId);
+    if (!r) return;
+    $('prModalTitle').textContent = 'แก้ไขงานขอราคา';
+    $('prId').value = r.id;
+    $('fPrDate').value = r.request_date || '';
+    $('fPrRequestedBy').value = r.requested_by || '';
+    $('fPrDetails').value = r.details || '';
+    $('fPrNotes').value = r.notes || '';
+    $('fPrSource').value = r.source || '';
+    selectedPrSource = r.source || null;
+    const opt = document.querySelector(`.pr-source-opt[data-source="${r.source}"]`);
+    if (opt) {
+      opt.classList.add('is-selected');
+      opt.setAttribute('aria-checked', 'true');
+    }
+  } else {
+    $('prModalTitle').textContent = 'เพิ่มงานขอราคา';
+    $('priceRequestForm').reset();
+    $('prId').value = '';
+    $('fPrSource').value = '';
+    $('fPrDate').value = new Date().toISOString().slice(0, 10);
+  }
+
+  $('priceRequestModal').hidden = false;
+  $('priceRequestModal').classList.add('is-visible');
+  $('fPrRequestedBy').focus();
+}
+
+function closePrModal() {
+  $('priceRequestModal').classList.remove('is-visible');
+  $('priceRequestModal').hidden = true;
+  editingPrId = null;
+}
+
+function readPriceRequestForm() {
+  return {
+    request_date: $('fPrDate').value,
+    requested_by: $('fPrRequestedBy').value.trim(),
+    source: $('fPrSource').value,
+    details: $('fPrDetails').value.trim(),
+    notes: $('fPrNotes').value.trim() || null,
+  };
+}
+
+async function onSavePriceRequest(e) {
+  e.preventDefault();
+  const errorEl = $('priceRequestFormError');
+  const btn = $('savePrBtn');
+  setFieldError(errorEl, '');
+
+  const formData = readPriceRequestForm();
+  if (!formData.request_date || !formData.requested_by || !formData.source || !formData.details) {
+    setFieldError(errorEl, 'กรุณากรอกวันที่ ผู้ขอ แหล่งที่มา และรายละเอียดให้ครบ');
+    return;
+  }
+
+  btn.classList.add('is-loading');
+  btn.disabled = true;
+
+  try {
+    if (editingPrId) {
+      const { data, error } = await sb
+        .from('price_requests')
+        .update({ ...formData, updated_by: currentUser.id })
+        .eq('id', editingPrId)
+        .select('*')
+        .single();
+      if (error) throw error;
+      const idx = allPriceRequests.findIndex(r => r.id === editingPrId);
+      if (idx !== -1) allPriceRequests[idx] = data;
+      showToast('บันทึกการแก้ไขสำเร็จ', 'success');
+    } else {
+      const { data, error } = await sb
+        .from('price_requests')
+        .insert({ ...formData, status: 'pending', created_by: currentUser.id, updated_by: currentUser.id })
+        .select('*')
+        .single();
+      if (error) throw error;
+      allPriceRequests.unshift(data);
+      showToast('เพิ่มงานขอราคาสำเร็จ', 'success');
+    }
+    renderPriceRequests();
+    closePrModal();
+  } catch (err) {
+    setFieldError(errorEl, err.message || 'บันทึกไม่สำเร็จ');
+  } finally {
+    btn.classList.remove('is-loading');
+    btn.disabled = false;
+  }
+}
+
+function openDeletePrModal(id) {
+  const r = allPriceRequests.find(x => x.id === id);
+  if (!r) return;
+  pendingDeletePr = r;
+  $('deletePrModalText').textContent = `ต้องการลบงานขอราคา "${r.details.slice(0, 60)}${r.details.length > 60 ? '…' : ''}" ใช่หรือไม่? การลบไม่สามารถย้อนกลับได้`;
+  $('deletePrModal').hidden = false;
+  $('deletePrModal').classList.add('is-visible');
+}
+
+function closeDeletePrModal() {
+  $('deletePrModal').classList.remove('is-visible');
+  $('deletePrModal').hidden = true;
+  pendingDeletePr = null;
+}
+
+async function onConfirmDeletePr() {
+  if (!pendingDeletePr) return;
+  const btn = $('confirmDeletePr');
+  btn.classList.add('is-loading');
+  btn.disabled = true;
+
+  try {
+    const { error } = await sb
+      .from('price_requests')
+      .delete()
+      .eq('id', pendingDeletePr.id);
+    if (error) throw error;
+
+    allPriceRequests = allPriceRequests.filter(r => r.id !== pendingDeletePr.id);
+    renderPriceRequests();
+    showToast('ลบงานขอราคาสำเร็จ', 'success');
+    closeDeletePrModal();
+  } catch (err) {
+    showToast('ลบไม่สำเร็จ: ' + (err.message || ''), 'error');
   } finally {
     btn.classList.remove('is-loading');
     btn.disabled = false;
