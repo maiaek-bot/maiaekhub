@@ -660,3 +660,61 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
   color: var(--text);
   font-family: var(--font-body);
 }
+
+/* ==================================================
+   Profile Avatar (clickable, header + modal)
+   ================================================== */
+.profile-avatar-btn {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.profile-avatar-btn:hover {
+  transform: scale(1.05);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.profile-avatar-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.profile-avatar-img {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  object-fit: cover;
+  display: block;
+}
+
+.profile-avatar-edit {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+.profile-avatar-preview-wrap {
+  width: 84px;
+  height: 84px;
+}
+.profile-avatar-preview {
+  width: 84px;
+  height: 84px;
+  border-radius: 16px;
+  font-size: 34px;
+  object-fit: cover;
+  display: flex;
+}
+img.profile-avatar-preview { display: block; }
+.field-hint {
+  display: block;
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
