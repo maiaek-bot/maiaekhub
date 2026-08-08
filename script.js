@@ -1178,8 +1178,147 @@ const PR_SOURCE_ICON = {
 const PR_STATUS_LABEL = { pending: 'รอดำเนินการ', in_progress: 'กำลังทำ', done: 'เสร็จแล้ว' };
 const PR_STATUS_CYCLE = { pending: 'in_progress', in_progress: 'done', done: 'pending' };
 
+// ==================================================
+// Calendar popover (ปฏิทินเลือกวันที่แบบ grid)
+// ==================================================
+const CAL_DAY_HEADERS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const CAL_MONTH_NAMES_TH = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+let calViewYear = null;   // ปีที่ปฏิทินกำลังแสดง (ค.ศ.)
+let calViewMonth = null;  // เดือนที่ปฏิทินกำลังแสดง (0-11)
+
+function todayIso() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function setPrDate(isoDate) {
+  $('fPrDate').value = isoDate;
+  $('fPrDateLabel').textContent = formatPrDate(isoDate);
+  const [y, m] = isoDate.split('-').map(Number);
+  calViewYear = y;
+  calViewMonth = m - 1;
+  renderCalendar();
+}
+
+function toggleCalendarPopover() {
+  const popover = $('prCalendarPopover');
+  if (popover.hidden) {
+    openCalendarPopover();
+  } else {
+    closeCalendarPopover();
+  }
+}
+
+function openCalendarPopover() {
+  const current = $('fPrDate').value || todayIso();
+  const [y, m] = current.split('-').map(Number);
+  calViewYear = y;
+  calViewMonth = m - 1;
+  renderCalendar();
+  $('prCalendarPopover').hidden = false;
+  $('fPrDateTrigger').classList.add('is-open');
+  $('fPrDateTrigger').setAttribute('aria-expanded', 'true');
+}
+
+function closeCalendarPopover() {
+  $('prCalendarPopover').hidden = true;
+  $('fPrDateTrigger').classList.remove('is-open');
+  $('fPrDateTrigger').setAttribute('aria-expanded', 'false');
+}
+
+function shiftCalendarMonth(delta) {
+  calViewMonth += delta;
+  if (calViewMonth < 0) { calViewMonth = 11; calViewYear--; }
+  if (calViewMonth > 11) { calViewMonth = 0; calViewYear++; }
+  renderCalendar();
+}
+
+function renderCalendar() {
+  $('calMonthLabel').textContent = `${CAL_MONTH_NAMES_TH[calViewMonth]} ${calViewYear + 543}`;
+
+  const calEl = $('calendar');
+  calEl.innerHTML = '';
+
+  const headerFrag = document.createDocumentFragment();
+  CAL_DAY_HEADERS.forEach(d => {
+    const li = document.createElement('li');
+    li.className = 'day';
+    li.textContent = d;
+    headerFrag.appendChild(li);
+  });
+  calEl.appendChild(headerFrag);
+
+  const firstOfMonth = new Date(calViewYear, calViewMonth, 1);
+  // แปลง getDay() (0=อาทิตย์) ให้เริ่มสัปดาห์ที่จันทร์ (0=จันทร์ ... 6=อาทิตย์)
+  const leadingBlanks = (firstOfMonth.getDay() + 6) % 7;
+  const daysInMonth = new Date(calViewYear, calViewMonth + 1, 0).getDate();
+  const daysInPrevMonth = new Date(calViewYear, calViewMonth, 0).getDate();
+
+  const selectedIso = $('fPrDate').value;
+  const todayIsoStr = todayIso();
+  const bodyFrag = document.createDocumentFragment();
+
+  // วันจากเดือนก่อนหน้า (แสดงจางๆ ให้ grid เต็มแถว)
+  for (let i = leadingBlanks - 1; i >= 0; i--) {
+    const dayNum = daysInPrevMonth - i;
+    bodyFrag.appendChild(buildCalendarDay(dayNum, calViewMonth - 1, true, selectedIso, todayIsoStr));
+  }
+  // วันในเดือนนี้
+  for (let d = 1; d <= daysInMonth; d++) {
+    bodyFrag.appendChild(buildCalendarDay(d, calViewMonth, false, selectedIso, todayIsoStr));
+  }
+  // วันจากเดือนถัดไป (เติมให้ครบแถวสุดท้าย)
+  const totalCells = leadingBlanks + daysInMonth;
+  const trailingBlanks = (7 - (totalCells % 7)) % 7;
+  for (let d = 1; d <= trailingBlanks; d++) {
+    bodyFrag.appendChild(buildCalendarDay(d, calViewMonth + 1, true, selectedIso, todayIsoStr));
+  }
+
+  calEl.appendChild(bodyFrag);
+}
+
+function buildCalendarDay(dayNum, monthIndex, isOutside, selectedIso, todayIsoStr) {
+  // จัดการ monthIndex ที่ล้นขอบ (-1 หรือ 12) ให้คำนวณปี/เดือนจริงถูกต้อง
+  const realDate = new Date(calViewYear, monthIndex, dayNum);
+  const iso = `${realDate.getFullYear()}-${String(realDate.getMonth() + 1).padStart(2, '0')}-${String(realDate.getDate()).padStart(2, '0')}`;
+
+  const li = document.createElement('li');
+  li.className = 'date' + (isOutside ? ' is-outside' : '');
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'calendar-day-btn';
+  if (iso === todayIsoStr) btn.classList.add('is-today');
+  if (iso === selectedIso) btn.classList.add('is-selected');
+  btn.textContent = String(dayNum);
+  btn.addEventListener('click', () => {
+    setPrDate(iso);
+    closeCalendarPopover();
+  });
+
+  li.appendChild(btn);
+  return li;
+}
+
 function bindPriceRequestEvents() {
   $('addPriceRequestBtn').addEventListener('click', () => openPrModal(null));
+
+  $('fPrDateTrigger').addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleCalendarPopover();
+  });
+  $('calPrevMonth').addEventListener('click', () => shiftCalendarMonth(-1));
+  $('calNextMonth').addEventListener('click', () => shiftCalendarMonth(1));
+  $('calTodayBtn').addEventListener('click', () => {
+    setPrDate(todayIso());
+    closeCalendarPopover();
+  });
+  document.addEventListener('click', (e) => {
+    const popover = $('prCalendarPopover');
+    if (!popover.hidden && !popover.contains(e.target) && e.target !== $('fPrDateTrigger') && !$('fPrDateTrigger').contains(e.target)) {
+      closeCalendarPopover();
+    }
+  });
 
   document.querySelectorAll('.pr-filter-chip').forEach(chip => {
     chip.addEventListener('click', () => {
@@ -1217,6 +1356,7 @@ function bindPriceRequestEvents() {
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
+      closeCalendarPopover();
       closePrModal();
       closeDeletePrModal();
     }
@@ -1285,6 +1425,13 @@ function renderPriceRequests() {
     card.dataset.id = r.id;
 
     card.innerHTML = `
+      <div class="pr-card-titlebar">
+        <span class="term-dot term-dot-red"></span>
+        <span class="term-dot term-dot-yellow"></span>
+        <span class="term-dot term-dot-green"></span>
+        <span class="pr-card-titlebar-text">${escapeHtml(r.requested_by)}.request</span>
+      </div>
+      <div class="pr-card-body">
       <div class="pr-card-main">
         <div class="pr-card-top">
           <span class="pr-card-date">${formatPrDate(r.request_date)}</span>
@@ -1307,6 +1454,7 @@ function renderPriceRequests() {
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
           </button>` : ''}
         </div>
+      </div>
       </div>
     `;
     frag.appendChild(card);
@@ -1374,7 +1522,7 @@ function openPrModal(prId) {
     if (!r) return;
     $('prModalTitle').textContent = 'แก้ไขงานขอราคา';
     $('prId').value = r.id;
-    $('fPrDate').value = r.request_date || '';
+    setPrDate(r.request_date || todayIso());
     $('fPrRequestedBy').value = r.requested_by || '';
     $('fPrDetails').value = r.details || '';
     $('fPrNotes').value = r.notes || '';
@@ -1390,9 +1538,10 @@ function openPrModal(prId) {
     $('priceRequestForm').reset();
     $('prId').value = '';
     $('fPrSource').value = '';
-    $('fPrDate').value = new Date().toISOString().slice(0, 10);
+    setPrDate(todayIso());
   }
 
+  closeCalendarPopover();
   $('priceRequestModal').hidden = false;
   $('priceRequestModal').classList.add('is-visible');
   $('fPrRequestedBy').focus();
@@ -1402,6 +1551,7 @@ function closePrModal() {
   $('priceRequestModal').classList.remove('is-visible');
   $('priceRequestModal').hidden = true;
   editingPrId = null;
+  closeCalendarPopover();
 }
 
 function readPriceRequestForm() {
