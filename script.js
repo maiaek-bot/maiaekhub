@@ -26,6 +26,7 @@ let currentProfile = null;   // { id, username, role, email }
 let allProducts = [];        // cached product list
 let editingProductId = null; // null = adding new, string = editing existing
 let pendingDeleteProduct = null;
+let currentCategoryFilter = 'all'; // 'all' | 'K06' | 'C04' | ... (คำนวณจากรหัสสินค้า)
 
 let allPriceRequests = [];       // cached price request list
 let priceRequestsLoaded = false; // lazy-load: fetch only when tab first opened
@@ -476,13 +477,77 @@ async function loadProducts() {
   renderProducts();
 }
 
+function getProductCategory(productCode) {
+  const code = (productCode || '').trim().toUpperCase();
+  // หมวด = ตัวอักษร 1 ตัวที่ตำแหน่งที่ 5 + เลข 2 หลักถัดไป (ตำแหน่งที่ 6-7)
+  // เช่น OTHEK06000125 -> K06, TASEC04000037 -> C04
+  const match = code.match(/^.{4}([A-Z]\d{2})/);
+  return match ? match[1] : null;
+}
+
+function getAvailableCategories() {
+  const counts = new Map();
+  allProducts.forEach(p => {
+    const cat = getProductCategory(p.product_code);
+    if (!cat) return;
+    counts.set(cat, (counts.get(cat) || 0) + 1);
+  });
+  return [...counts.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([category, count]) => ({ category, count }));
+}
+
+function renderCategoryFilters() {
+  const wrap = $('categoryFilters');
+  const categories = getAvailableCategories();
+
+  if (categories.length === 0) {
+    wrap.innerHTML = '';
+    wrap.hidden = true;
+    return;
+  }
+  wrap.hidden = false;
+
+  // ถ้าหมวดที่เคยเลือกไว้หายไป (เช่นลบสินค้าหมวดนั้นหมด) ให้กลับไปที่ "ทั้งหมด"
+  if (currentCategoryFilter !== 'all' && !categories.some(c => c.category === currentCategoryFilter)) {
+    currentCategoryFilter = 'all';
+  }
+
+  const totalCount = allProducts.length;
+  const chips = [
+    `<button class="category-filter-chip${currentCategoryFilter === 'all' ? ' is-active' : ''}" data-category="all" role="tab" aria-selected="${currentCategoryFilter === 'all'}">
+      <span>ทั้งหมด</span><span class="category-filter-chip-count">${totalCount}</span>
+    </button>`
+  ];
+  categories.forEach(({ category, count }) => {
+    chips.push(`<button class="category-filter-chip${currentCategoryFilter === category ? ' is-active' : ''}" data-category="${escapeHtml(category)}" role="tab" aria-selected="${currentCategoryFilter === category}">
+      <span>${escapeHtml(category)}</span><span class="category-filter-chip-count">${count}</span>
+    </button>`);
+  });
+
+  wrap.innerHTML = chips.join('');
+
+  wrap.querySelectorAll('.category-filter-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      currentCategoryFilter = chip.dataset.category;
+      renderProducts();
+    });
+  });
+}
+
 function renderProducts() {
+  renderCategoryFilters();
+
   const query = $('searchInput').value.trim().toLowerCase();
-  const filtered = query
+  let filtered = query
     ? allProducts.filter(p =>
         (p.product_name || '').toLowerCase().includes(query) ||
         (p.product_code || '').toLowerCase().includes(query))
     : allProducts;
+
+  if (currentCategoryFilter !== 'all') {
+    filtered = filtered.filter(p => getProductCategory(p.product_code) === currentCategoryFilter);
+  }
 
   const tbody = $('productTableBody');
   tbody.innerHTML = '';
@@ -491,6 +556,8 @@ function renderProducts() {
     $('emptyState').hidden = false;
     $('emptyStateText').textContent = query
       ? `ไม่พบสินค้าที่ตรงกับ "${query}"`
+      : currentCategoryFilter !== 'all'
+      ? `ไม่มีสินค้าในหมวด "${currentCategoryFilter}"`
       : 'ยังไม่มีข้อมูลสินค้า — เริ่มเพิ่มสินค้าแรกของคุณ';
     return;
   }
