@@ -506,7 +506,6 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
   inset: 0;
   background: rgba(8, 10, 13, 0.7);
   backdrop-filter: blur(2px);
-  display: flex;
   align-items: flex-end;
   justify-content: center;
   z-index: 200;
