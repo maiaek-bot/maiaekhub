@@ -388,7 +388,12 @@ function renderProducts() {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td class="product-code">${escapeHtml(p.product_code)}</td>
-      <td class="product-name">${escapeHtml(p.product_name)}</td>
+      <td class="product-name">
+        <span class="product-name-text">${escapeHtml(p.product_name)}</span>
+        <button class="copy-btn" data-action="copy" data-id="${p.id}" title="คัดลอกรหัส + ชื่อสินค้า" aria-label="คัดลอกรหัสและชื่อสินค้า ${escapeHtml(p.product_name)}">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </button>
+      </td>
       <td class="num">${formatMoney(p.price)}</td>
       <td class="num">${p.discount_step_1 != null ? formatMoney(p.discount_step_1) : '<span class="cell-empty">—</span>'}</td>
       <td class="num">${p.discount_step_2 != null ? formatMoney(p.discount_step_2) : '<span class="cell-empty">—</span>'}</td>
@@ -415,6 +420,33 @@ function renderProducts() {
   tbody.querySelectorAll('[data-action="delete"]').forEach(btn => {
     btn.addEventListener('click', () => openDeleteModal(btn.dataset.id));
   });
+  tbody.querySelectorAll('[data-action="copy"]').forEach(btn => {
+    btn.addEventListener('click', () => copyProductCodeAndName(btn));
+  });
+}
+
+async function copyProductCodeAndName(btn) {
+  const p = allProducts.find(x => x.id === btn.dataset.id);
+  if (!p) return;
+  const text = `${p.product_code} ${p.product_name}`;
+
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (err) {
+    // fallback สำหรับเบราว์เซอร์/บริบทที่ Clipboard API ใช้ไม่ได้ (เช่นไม่ใช่ HTTPS)
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch (e) { /* เงียบไว้ ไม่ block การใช้งาน */ }
+    document.body.removeChild(ta);
+  }
+
+  showToast('คัดลอกแล้ว', 'success');
+  btn.classList.add('is-copied');
+  setTimeout(() => btn.classList.remove('is-copied'), 1200);
 }
 
 function formatMoney(n) {
