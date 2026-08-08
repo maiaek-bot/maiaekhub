@@ -437,6 +437,37 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
 .product-table td.num { text-align: right; font-family: var(--font-mono); }
 .product-code { font-family: var(--font-mono); color: var(--accent); font-weight: 600; }
 .product-name { font-weight: 500; }
+.product-name-text { vertical-align: middle; }
+
+/* ปุ่มคัดลอก รหัส+ชื่อสินค้า — เล็กๆ ข้างชื่อ ขยายนิดหน่อยตอน hover */
+.copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-left: 6px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  color: var(--text-faint);
+  cursor: pointer;
+  vertical-align: middle;
+  transition: transform 0.15s ease, color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+}
+.copy-btn:hover {
+  transform: scale(1.18);
+  color: var(--accent);
+  border-color: var(--accent-dim);
+  background: var(--accent-soft);
+}
+.copy-btn:active { transform: scale(1.05); }
+.copy-btn.is-copied {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
 .order-condition { color: var(--text-dim); font-size: 13px; max-width: 240px; }
 .cell-empty { color: var(--text-faint); }
 
