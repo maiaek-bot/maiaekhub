@@ -259,19 +259,40 @@
 
 <!-- ============ PRICE REQUEST MODAL (Add / Edit) ============ -->
 <div id="priceRequestModal" class="modal-overlay" hidden>
-  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="prModalTitle">
-    <div class="modal-header">
-      <h2 id="prModalTitle">เพิ่มงานขอราคา</h2>
-      <button class="btn-close" id="closePrModal" aria-label="ปิด">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+  <div class="modal term-card" role="dialog" aria-modal="true" aria-labelledby="prModalTitle">
+    <div class="term-titlebar">
+      <span class="term-dot term-dot-red"></span>
+      <span class="term-dot term-dot-yellow"></span>
+      <span class="term-dot term-dot-green"></span>
+      <span class="term-titlebar-text" id="prModalTitle">เพิ่มงานขอราคา</span>
+      <button class="btn-close term-close" id="closePrModal" aria-label="ปิด">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
       </button>
     </div>
-    <form id="priceRequestForm" class="modal-body">
+    <form id="priceRequestForm" class="modal-body term-body">
       <input type="hidden" id="prId">
       <div class="form-grid">
-        <label class="field">
+        <label class="field field-date-picker">
           <span class="field-label">วันที่ *</span>
-          <input type="date" id="fPrDate" required>
+          <button type="button" class="date-picker-trigger" id="fPrDateTrigger" aria-haspopup="dialog" aria-expanded="false">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+            <span id="fPrDateLabel">เลือกวันที่</span>
+          </button>
+          <input type="hidden" id="fPrDate" required>
+
+          <div id="prCalendarPopover" class="calendar-popover" hidden>
+            <div class="calendar-nav">
+              <button type="button" class="calendar-nav-btn" id="calPrevMonth" aria-label="เดือนก่อนหน้า">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+              </button>
+              <span class="calendar-nav-label" id="calMonthLabel"></span>
+              <button type="button" class="calendar-nav-btn" id="calNextMonth" aria-label="เดือนถัดไป">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+              </button>
+            </div>
+            <ul id="calendar" class="calendar-grid"></ul>
+            <button type="button" class="calendar-today-btn" id="calTodayBtn">วันนี้</button>
+          </div>
         </label>
         <label class="field">
           <span class="field-label">ผู้ขอ *</span>
@@ -317,14 +338,17 @@
 
 <!-- ============ DELETE PRICE REQUEST CONFIRM MODAL ============ -->
 <div id="deletePrModal" class="modal-overlay" hidden>
-  <div class="modal modal-sm" role="dialog" aria-modal="true" aria-labelledby="deletePrModalTitle">
-    <div class="modal-header">
-      <h2 id="deletePrModalTitle">ยืนยันการลบงานขอราคา</h2>
-      <button class="btn-close" id="closeDeletePrModal" aria-label="ปิด">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+  <div class="modal modal-sm term-card" role="dialog" aria-modal="true" aria-labelledby="deletePrModalTitle">
+    <div class="term-titlebar">
+      <span class="term-dot term-dot-red"></span>
+      <span class="term-dot term-dot-yellow"></span>
+      <span class="term-dot term-dot-green"></span>
+      <span class="term-titlebar-text" id="deletePrModalTitle">ยืนยันการลบงานขอราคา</span>
+      <button class="btn-close term-close" id="closeDeletePrModal" aria-label="ปิด">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
       </button>
     </div>
-    <div class="modal-body">
+    <div class="modal-body term-body">
       <p id="deletePrModalText" class="modal-text"></p>
     </div>
     <div class="modal-footer">
