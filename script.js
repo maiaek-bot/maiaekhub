@@ -45,6 +45,7 @@ async function init() {
   bindAuthForms();
   bindAppEvents();
   bindModalEvents();
+  bindImportEvents();
 
   showAuthScreen();
 
@@ -431,6 +432,7 @@ function bindModalEvents() {
       closeProductModal();
       closeDeleteModal();
       closeHistoryModal();
+      closeImportModal();
     }
   });
 }
@@ -683,4 +685,262 @@ function buildDiffHtml(oldVal, newVal) {
 function closeHistoryModal() {
   $('historyModal').classList.remove('is-visible');
   $('historyModal').hidden = true;
+}
+
+// ==================================================
+// Import Products from CSV/Excel
+// ==================================================
+const IMPORT_COLUMNS = [
+  'product_code', 'product_name', 'price',
+  'discount_step_1', 'discount_step_2', 'discount_step_3', 'discount_step_4',
+  'order_condition'
+];
+const IMPORT_TEMPLATE_HEADER = IMPORT_COLUMNS.join(',');
+const IMPORT_TEMPLATE_SAMPLE = 'SKU-001,ตัวอย่างสินค้า,100.00,90.00,85.00,80.00,75.00,สั่งขั้นต่ำ 10 ชิ้น';
+
+let importParsedRows = []; // rows after validation: { data, status: 'new'|'update'|'error', note }
+
+function bindImportEvents() {
+  $('importProductsBtn').addEventListener('click', openImportModal);
+  $('closeImportModal').addEventListener('click', closeImportModal);
+  $('cancelImport').addEventListener('click', closeImportModal);
+  $('importModal').addEventListener('click', (e) => { if (e.target === $('importModal')) closeImportModal(); });
+
+  $('downloadTemplateBtn').addEventListener('click', downloadImportTemplate);
+  $('importFileInput').addEventListener('change', onImportFileSelected);
+  $('confirmImportBtn').addEventListener('click', onConfirmImport);
+}
+
+function openImportModal() {
+  resetImportModal();
+  $('importModal').hidden = false;
+  $('importModal').classList.add('is-visible');
+}
+
+function closeImportModal() {
+  $('importModal').classList.remove('is-visible');
+  $('importModal').hidden = true;
+  resetImportModal();
+}
+
+function resetImportModal() {
+  importParsedRows = [];
+  $('importFileInput').value = '';
+  setFieldError($('importPickError'), '');
+  setFieldError($('importResultError'), '');
+  $('importStepPick').hidden = false;
+  $('importStepPreview').hidden = true;
+  $('confirmImportBtn').hidden = true;
+  $('importPreviewBody').innerHTML = '';
+  $('importDuplicateMode').value = 'skip';
+}
+
+function downloadImportTemplate() {
+  const csvContent = IMPORT_TEMPLATE_HEADER + '\n' + IMPORT_TEMPLATE_SAMPLE + '\n';
+  const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'maiaekhub_import_template.csv';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function onImportFileSelected(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  setFieldError($('importPickError'), '');
+
+  const ext = file.name.split('.').pop().toLowerCase();
+
+  if (ext === 'csv') {
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (results) => handleParsedRows(results.data),
+      error: (err) => setFieldError($('importPickError'), 'อ่านไฟล์ CSV ไม่สำเร็จ: ' + err.message),
+    });
+  } else if (ext === 'xlsx' || ext === 'xls') {
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const wb = XLSX.read(evt.target.result, { type: 'array' });
+        const firstSheet = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(firstSheet, { defval: '' });
+        handleParsedRows(rows);
+      } catch (err) {
+        setFieldError($('importPickError'), 'อ่านไฟล์ Excel ไม่สำเร็จ: ' + err.message);
+      }
+    };
+    reader.onerror = () => setFieldError($('importPickError'), 'อ่านไฟล์ไม่สำเร็จ');
+    reader.readAsArrayBuffer(file);
+  } else {
+    setFieldError($('importPickError'), 'รองรับเฉพาะไฟล์ .csv, .xlsx, .xls เท่านั้น');
+  }
+}
+
+function normalizeImportRow(raw) {
+  // รองรับ header ที่มีช่องว่าง/ตัวพิมพ์ใหญ่เล็กต่างกันเล็กน้อย
+  const get = (key) => {
+    const foundKey = Object.keys(raw).find(k => k.trim().toLowerCase() === key);
+    return foundKey !== undefined ? String(raw[foundKey] ?? '').trim() : '';
+  };
+
+  const toNum = (v) => {
+    if (v === '' || v == null) return null;
+    const n = parseFloat(String(v).replace(/,/g, ''));
+    return isNaN(n) ? undefined : n; // undefined = ค่าที่ parse ไม่ได้ (invalid)
+  };
+
+  const priceRaw = toNum(get('price'));
+
+  return {
+    product_code: get('product_code'),
+    product_name: get('product_name'),
+    price: priceRaw,
+    discount_step_1: toNum(get('discount_step_1')),
+    discount_step_2: toNum(get('discount_step_2')),
+    discount_step_3: toNum(get('discount_step_3')),
+    discount_step_4: toNum(get('discount_step_4')),
+    order_condition: get('order_condition') || null,
+  };
+}
+
+async function handleParsedRows(rawRows) {
+  if (!rawRows || rawRows.length === 0) {
+    setFieldError($('importPickError'), 'ไม่พบข้อมูลในไฟล์ที่เลือก');
+    return;
+  }
+  if (rawRows.length > 1000) {
+    setFieldError($('importPickError'), 'ไฟล์มีข้อมูลมากเกินไป (สูงสุด 1000 แถวต่อครั้ง)');
+    return;
+  }
+
+  // ดึงรหัสสินค้าที่มีอยู่แล้วในระบบ เพื่อตรวจสอบรายการซ้ำ
+  const existingCodes = new Set(allProducts.map(p => p.product_code));
+  const seenInFile = new Set();
+
+  const parsed = rawRows.map((raw, idx) => {
+    const row = normalizeImportRow(raw);
+    const rowNum = idx + 2; // +2 เพราะแถวที่ 1 คือ header
+    let status = 'new';
+    let note = '';
+
+    if (!row.product_code || !row.product_name) {
+      status = 'error';
+      note = 'ไม่มีรหัสสินค้า หรือ ชื่อสินค้า';
+    } else if (row.price === undefined || row.price === null) {
+      status = 'error';
+      note = row.price === undefined ? 'ราคาไม่ใช่ตัวเลข' : 'ไม่มีราคา';
+    } else if ([row.discount_step_1, row.discount_step_2, row.discount_step_3, row.discount_step_4].some(v => v === undefined)) {
+      status = 'error';
+      note = 'สเต็ปส่วนลดมีค่าที่ไม่ใช่ตัวเลข';
+    } else if (seenInFile.has(row.product_code)) {
+      status = 'error';
+      note = 'รหัสสินค้าซ้ำกันภายในไฟล์เดียวกัน';
+    } else if (existingCodes.has(row.product_code)) {
+      status = 'duplicate';
+      note = 'มีรหัสนี้อยู่แล้วในระบบ';
+    }
+
+    if (row.product_code) seenInFile.add(row.product_code);
+
+    return { rowNum, data: row, status, note };
+  });
+
+  importParsedRows = parsed;
+  renderImportPreview();
+}
+
+function renderImportPreview() {
+  $('importStepPick').hidden = true;
+  $('importStepPreview').hidden = false;
+
+  const total = importParsedRows.length;
+  const errorCount = importParsedRows.filter(r => r.status === 'error').length;
+  const dupCount = importParsedRows.filter(r => r.status === 'duplicate').length;
+  const okCount = total - errorCount;
+
+  $('importSummaryText').textContent =
+    `พบทั้งหมด ${total} แถว — นำเข้าได้ ${okCount} แถว (ซ้ำกับของเดิม ${dupCount} แถว), มีปัญหา ${errorCount} แถว (จะถูกข้าม)`;
+
+  const statusLabel = { new: 'ใหม่', duplicate: 'ซ้ำ', error: 'ผิดพลาด' };
+  const statusClass = { new: 'success', duplicate: 'warn', error: 'error' };
+
+  const tbody = $('importPreviewBody');
+  tbody.innerHTML = '';
+  importParsedRows.forEach(r => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><span class="import-status import-status-${statusClass[r.status]}">${statusLabel[r.status]}</span></td>
+      <td class="product-code">${escapeHtml(r.data.product_code || '(ว่าง)')}</td>
+      <td class="product-name">${escapeHtml(r.data.product_name || '(ว่าง)')}</td>
+      <td class="num">${r.data.price != null && r.data.price !== undefined ? formatMoney(r.data.price) : '—'}</td>
+      <td>${escapeHtml(r.note || '')}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  $('confirmImportBtn').hidden = okCount === 0;
+}
+
+async function onConfirmImport() {
+  const btn = $('confirmImportBtn');
+  const duplicateMode = $('importDuplicateMode').value; // 'skip' | 'update'
+  setFieldError($('importResultError'), '');
+
+  const toInsert = importParsedRows
+    .filter(r => r.status === 'new')
+    .map(r => ({ ...r.data, created_by: currentUser.id, updated_by: currentUser.id }));
+
+  const toUpdate = duplicateMode === 'update'
+    ? importParsedRows.filter(r => r.status === 'duplicate').map(r => ({ ...r.data, updated_by: currentUser.id }))
+    : [];
+
+  if (toInsert.length === 0 && toUpdate.length === 0) {
+    setFieldError($('importResultError'), 'ไม่มีแถวที่จะนำเข้า');
+    return;
+  }
+
+  btn.classList.add('is-loading');
+  btn.disabled = true;
+
+  try {
+    let insertedCount = 0;
+    let updatedCount = 0;
+
+    if (toInsert.length > 0) {
+      // bulk insert ทีเดียว แบ่งเป็นชุดละ 500 แถว เผื่อไฟล์ใหญ่
+      const chunkSize = 500;
+      for (let i = 0; i < toInsert.length; i += chunkSize) {
+        const chunk = toInsert.slice(i, i + chunkSize);
+        const { error } = await sb.from('products').insert(chunk);
+        if (error) throw error;
+        insertedCount += chunk.length;
+      }
+    }
+
+    if (toUpdate.length > 0) {
+      // update ต้องทำทีละแถว เพราะแต่ละแถวมีเงื่อนไข product_code ต่างกัน
+      for (const row of toUpdate) {
+        const { error } = await sb
+          .from('products')
+          .update(row)
+          .eq('product_code', row.product_code);
+        if (error) throw error;
+        updatedCount++;
+      }
+    }
+
+    showToast(`นำเข้าสำเร็จ: เพิ่มใหม่ ${insertedCount} รายการ${updatedCount ? `, อัปเดต ${updatedCount} รายการ` : ''}`, 'success');
+    closeImportModal();
+    await loadProducts();
+  } catch (err) {
+    setFieldError($('importResultError'), 'นำเข้าไม่สำเร็จ: ' + (err.message || 'เกิดข้อผิดพลาด'));
+  } finally {
+    btn.classList.remove('is-loading');
+    btn.disabled = false;
+  }
 }
