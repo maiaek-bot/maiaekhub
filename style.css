@@ -1426,3 +1426,40 @@ img.profile-avatar-preview { display: block; }
   justify-content: flex-end;
   gap: 6px;
 }
+
+/* ==================================================
+   Products — category filter chips (หมวดสินค้า)
+   ================================================== */
+.category-filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.category-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.category-filter-chip:hover { border-color: var(--text-faint); color: var(--text); }
+.category-filter-chip.is-active {
+  background: var(--accent-soft);
+  border-color: var(--accent-dim);
+  color: var(--accent);
+}
+.category-filter-chip-count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  opacity: 0.7;
+}
