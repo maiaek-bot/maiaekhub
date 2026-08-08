@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="style.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
 </head>
 <body>
 
@@ -101,6 +102,20 @@
       <span>ขอราคา</span>
       <span id="prTabBadge" class="view-tab-badge" hidden>0</span>
     </button>
+
+    <div class="nav-dropdown" id="toolsDropdown">
+      <button class="view-tab nav-dropdown-trigger" id="toolsDropdownBtn" aria-haspopup="true" aria-expanded="false" type="button">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+        <span>เครื่องมือ</span>
+        <svg class="nav-dropdown-caret" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+      <div class="nav-dropdown-menu" id="toolsDropdownMenu" hidden>
+        <button class="nav-dropdown-item" data-view="renamePo" type="button">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/><path d="M14 2v6h6"/></svg>
+          <span>Rename_PO</span>
+        </button>
+      </div>
+    </div>
   </nav>
 
   <main class="app-main" id="productsView">
@@ -195,6 +210,81 @@
           </div>
         </div>
         <div class="terminal-text">กำลังโหลดข้อมูล...</div>
+      </div>
+    </div>
+
+  </main>
+
+  <main class="app-main" id="renamePoView" hidden>
+
+    <div class="tool-section">
+      <div class="tool-section-head">
+        <h2 class="tool-section-title">Rename PDF ใบสั่งซื้อ</h2>
+        <p class="tool-section-desc">อัปโหลดไฟล์ PDF ระบบจะอ่านเลข PO และรหัส Vendor อัตโนมัติ แล้วเปลี่ยนชื่อไฟล์ให้ พร้อมดาวน์โหลดลงเครื่อง</p>
+      </div>
+
+      <div class="rename-dropzone" id="renameDropzone">
+        <input type="file" id="renamePdfInput" accept="application/pdf" multiple hidden>
+        <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/><path d="M14 2v6h6"/><path d="M12 12v6M9 15h6"/></svg>
+        <p><strong>เลือกไฟล์ PDF</strong> หรือลากมาวางที่นี่ (เลือกได้หลายไฟล์)</p>
+        <span id="renameFileCount" class="rename-file-count" hidden></span>
+      </div>
+
+      <button id="renameProcessBtn" class="btn btn-primary rename-process-btn" disabled>
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        <span>ประมวลผลและดาวน์โหลด</span>
+      </button>
+
+      <div id="renameStatusList" class="rename-status-list"></div>
+    </div>
+
+    <div class="tool-section">
+      <div class="tool-section-head tool-section-head-row">
+        <div>
+          <h2 class="tool-section-title">ตาราง Vendor Mapping</h2>
+          <p class="tool-section-desc">รหัส Vendor (เช่น V00427) จับคู่กับชื่อที่จะใช้ตั้งชื่อไฟล์ แก้ไข/เพิ่ม/ลบได้ตลอด</p>
+        </div>
+        <button id="addVendorBtn" class="btn btn-primary">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          <span>เพิ่ม Vendor</span>
+        </button>
+      </div>
+
+      <div class="search-wrap">
+        <svg class="search-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input type="text" id="vendorSearchInput" placeholder="ค้นหาด้วยรหัส Vendor หรือ ชื่อ…" autocomplete="off">
+      </div>
+
+      <div class="table-wrap">
+        <table class="product-table" id="vendorTable">
+          <thead>
+            <tr>
+              <th>รหัส Vendor</th>
+              <th>ชื่อ Vendor</th>
+              <th class="num">จัดการ</th>
+            </tr>
+          </thead>
+          <tbody id="vendorTableBody"></tbody>
+        </table>
+      </div>
+
+      <div id="vendorEmptyState" class="empty-state" hidden>
+        <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/><path d="M14 2v6h6"/></svg>
+        <p id="vendorEmptyStateText">ยังไม่มีข้อมูล Vendor Mapping</p>
+      </div>
+
+      <div id="vendorLoadingState" class="loading-state" hidden>
+        <div class="terminal-loader">
+          <div class="terminal-header">
+            <span class="terminal-title">maiaekhub</span>
+            <div class="terminal-controls">
+              <span class="control close"></span>
+              <span class="control minimize"></span>
+              <span class="control maximize"></span>
+            </div>
+          </div>
+          <div class="terminal-text">กำลังโหลดข้อมูล...</div>
+        </div>
       </div>
     </div>
 
@@ -358,6 +448,57 @@
     <div class="modal-footer">
       <button type="button" class="btn btn-ghost" id="cancelDeletePr">ยกเลิก</button>
       <button type="button" class="btn btn-danger" id="confirmDeletePr">ลบงาน</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ VENDOR MAPPING MODAL (Add / Edit) ============ -->
+<div id="vendorModal" class="modal-overlay" hidden>
+  <div class="modal modal-sm" role="dialog" aria-modal="true" aria-labelledby="vendorModalTitle">
+    <div class="modal-header">
+      <h2 id="vendorModalTitle">เพิ่ม Vendor ใหม่</h2>
+      <button class="btn-close" id="closeVendorModal" aria-label="ปิด">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <form id="vendorForm" class="modal-body">
+      <input type="hidden" id="vendorId">
+      <div class="form-grid">
+        <label class="field">
+          <span class="field-label">รหัส Vendor *</span>
+          <input type="text" id="fVendorCode" required placeholder="เช่น V00427">
+        </label>
+        <label class="field">
+          <span class="field-label">ชื่อ Vendor *</span>
+          <input type="text" id="fVendorName" required placeholder="ชื่อ Vendor">
+        </label>
+      </div>
+      <p id="vendorFormError" class="field-error" role="alert"></p>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" id="cancelVendorForm">ยกเลิก</button>
+        <button type="submit" class="btn btn-primary" id="saveVendorBtn">
+          <span class="btn-label">บันทึก</span>
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ============ DELETE VENDOR CONFIRM MODAL ============ -->
+<div id="deleteVendorModal" class="modal-overlay" hidden>
+  <div class="modal modal-sm" role="dialog" aria-modal="true" aria-labelledby="deleteVendorModalTitle">
+    <div class="modal-header">
+      <h2 id="deleteVendorModalTitle">ยืนยันการลบ Vendor</h2>
+      <button class="btn-close" id="closeDeleteVendorModal" aria-label="ปิด">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <p id="deleteVendorModalText" class="modal-text"></p>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-ghost" id="cancelDeleteVendor">ยกเลิก</button>
+      <button type="button" class="btn btn-danger" id="confirmDeleteVendor">ลบ</button>
     </div>
   </div>
 </div>
