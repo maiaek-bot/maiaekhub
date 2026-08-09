@@ -563,6 +563,7 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
   background: var(--accent-soft);
 }
 .order-condition { color: var(--text-dim); font-size: 13px; max-width: 240px; }
+.price-date { color: var(--text-dim); font-size: 13px; font-family: var(--font-mono); white-space: nowrap; }
 .cell-empty { color: var(--text-faint); }
 
 .actions-col { text-align: right; width: 1%; }
@@ -1405,7 +1406,7 @@ img.profile-avatar-preview { display: block; }
   font-family: var(--font-mono);
 }
 
-#calendar.calendar-grid {
+.calendar-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 4px;
