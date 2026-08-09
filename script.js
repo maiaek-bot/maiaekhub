@@ -640,10 +640,10 @@ function renderProducts() {
         </button>
       </td>
       <td class="num" data-label="ราคา">${formatMoney(p.price)}</td>
-      <td class="num" data-label="สเต็ป 1">${p.discount_step_1 != null ? formatMoney(p.discount_step_1) : '<span class="cell-empty">—</span>'}</td>
-      <td class="num" data-label="สเต็ป 2">${p.discount_step_2 != null ? formatMoney(p.discount_step_2) : '<span class="cell-empty">—</span>'}</td>
-      <td class="num" data-label="สเต็ป 3">${p.discount_step_3 != null ? formatMoney(p.discount_step_3) : '<span class="cell-empty">—</span>'}</td>
-      <td class="num" data-label="สเต็ป 4">${p.discount_step_4 != null ? formatMoney(p.discount_step_4) : '<span class="cell-empty">—</span>'}</td>
+      <td class="num" data-label="สเต็ป 1">${p.discount_step_1 != null && p.discount_step_1 !== '' ? escapeHtml(p.discount_step_1) : '<span class="cell-empty">—</span>'}</td>
+      <td class="num" data-label="สเต็ป 2">${p.discount_step_2 != null && p.discount_step_2 !== '' ? escapeHtml(p.discount_step_2) : '<span class="cell-empty">—</span>'}</td>
+      <td class="num" data-label="สเต็ป 3">${p.discount_step_3 != null && p.discount_step_3 !== '' ? escapeHtml(p.discount_step_3) : '<span class="cell-empty">—</span>'}</td>
+      <td class="num" data-label="สเต็ป 4">${p.discount_step_4 != null && p.discount_step_4 !== '' ? escapeHtml(p.discount_step_4) : '<span class="cell-empty">—</span>'}</td>
       <td class="order-condition" data-label="เงื่อนไข">${p.order_condition ? escapeHtml(p.order_condition) : '<span class="cell-empty">—</span>'}</td>
       <td class="price-date" data-label="อัปเดตราคาล่าสุด">${p.price_updated_at ? formatPrDate(p.price_updated_at) : '<span class="cell-empty">—</span>'}</td>
       <td class="actions-col" data-label="">
@@ -937,22 +937,31 @@ function readProductForm() {
     product_code: $('fProductCode').value.trim(),
     product_name: $('fProductName').value.trim(),
     price: parseFloat($('fPrice').value) || 0,
-    discount_step_1: $('fStep1').value === '' ? null : parseFloat($('fStep1').value),
-    discount_step_2: $('fStep2').value === '' ? null : parseFloat($('fStep2').value),
-    discount_step_3: $('fStep3').value === '' ? null : parseFloat($('fStep3').value),
-    discount_step_4: $('fStep4').value === '' ? null : parseFloat($('fStep4').value),
+    discount_step_1: $('fStep1').value.trim() || null,
+    discount_step_2: $('fStep2').value.trim() || null,
+    discount_step_3: $('fStep3').value.trim() || null,
+    discount_step_4: $('fStep4').value.trim() || null,
     order_condition: $('fCondition').value.trim() || null,
     price_updated_at: $('fPriceDate').value || todayIso(),
   };
 }
 
 // ตรวจว่าสเต็ปส่วนลดเรียงจากมากไปน้อยหรือไม่ (ยิ่งซื้อเยอะ ราคาต่อหน่วยควรยิ่งถูกลง)
-// คืนค่า true ถ้าเรียงถูกต้อง (หรือว่างจนตรวจไม่ได้), false ถ้าผิดปกติ
+// สเต็ปส่วนลดตอนนี้เป็นข้อความอิสระ (พิมพ์อะไรก็ได้ เช่น "90 บาท/ลัง") — เทียบลำดับได้เฉพาะค่าที่เป็นตัวเลขล้วนๆ เท่านั้น
+// ค่าที่เป็นข้อความ (ไม่ใช่ตัวเลขล้วน) จะถูกข้ามไปเงียบๆ ไม่นับเป็นผิดปกติ
+// คืนค่า true ถ้าเรียงถูกต้อง (หรือว่าง/เป็นข้อความจนตรวจไม่ได้), false ถ้าผิดปกติ
+function parseNumericStepOrNull(v) {
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null; // ข้อความอิสระ เช่น "90 บาท/ลัง" -> null (ข้ามการเทียบ)
+}
+
 function isDiscountStepOrderValid(data) {
   const steps = [data.price, data.discount_step_1, data.discount_step_2, data.discount_step_3, data.discount_step_4]
-    .filter(v => v != null && v !== '');
+    .map(parseNumericStepOrNull)
+    .filter(v => v !== null);
   for (let i = 1; i < steps.length; i++) {
-    if (Number(steps[i]) > Number(steps[i - 1])) return false;
+    if (steps[i] > steps[i - 1]) return false;
   }
   return true;
 }
@@ -1353,10 +1362,11 @@ function normalizeImportRow(raw) {
     product_code: get('product_code'),
     product_name: get('product_name'),
     price: priceRaw === null ? 0 : priceRaw,
-    discount_step_1: toNum(get('discount_step_1')),
-    discount_step_2: toNum(get('discount_step_2')),
-    discount_step_3: toNum(get('discount_step_3')),
-    discount_step_4: toNum(get('discount_step_4')),
+    // สเต็ปส่วนลดเป็นข้อความอิสระ (พิมพ์อะไรก็ได้ เช่น "90 บาท/ลัง") — ไม่ต้อง parse เป็นตัวเลข
+    discount_step_1: get('discount_step_1') || null,
+    discount_step_2: get('discount_step_2') || null,
+    discount_step_3: get('discount_step_3') || null,
+    discount_step_4: get('discount_step_4') || null,
     order_condition: get('order_condition') || null,
   };
 }
@@ -1387,9 +1397,6 @@ async function handleParsedRows(rawRows) {
     } else if (row.price === undefined) {
       status = 'error';
       note = 'ราคาไม่ใช่ตัวเลข';
-    } else if ([row.discount_step_1, row.discount_step_2, row.discount_step_3, row.discount_step_4].some(v => v === undefined)) {
-      status = 'error';
-      note = 'สเต็ปส่วนลดมีค่าที่ไม่ใช่ตัวเลข';
     } else if (seenInFile.has(row.product_code)) {
       status = 'error';
       note = 'รหัสสินค้าซ้ำกันภายในไฟล์เดียวกัน';
