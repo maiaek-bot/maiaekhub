@@ -104,6 +104,12 @@ button, input, textarea {
 
 .btn-block { width: 100%; }
 
+.btn-sm {
+  height: 36px;
+  padding: 0 14px;
+  font-size: 13px;
+}
+
 .btn-icon {
   padding: 0;
   width: var(--touch);
@@ -426,6 +432,92 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
 }
 .product-table thead th.num { text-align: right; }
 
+.product-table thead th.checkbox-col,
+.product-table tbody td.checkbox-col {
+  width: 1%;
+  padding-left: 16px;
+  padding-right: 8px;
+}
+.product-table thead th.checkbox-col input[type="checkbox"],
+.product-table tbody td.checkbox-col input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+.product-table thead th.sortable {
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.15s ease;
+}
+.product-table thead th.sortable:hover { color: var(--text); }
+.sort-arrow {
+  display: inline-block;
+  width: 10px;
+  margin-left: 4px;
+  opacity: 0.35;
+}
+.product-table thead th.sortable.is-sorted .sort-arrow { opacity: 1; color: var(--accent); }
+.product-table thead th.sortable.is-sorted-asc .sort-arrow::after { content: "▲"; font-size: 9px; }
+.product-table thead th.sortable.is-sorted-desc .sort-arrow::after { content: "▼"; font-size: 9px; }
+
+.product-table tbody tr.is-selected { background: var(--accent-soft); }
+
+/* ============ Bulk action bar ============ */
+.bulk-action-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-dim);
+  border-radius: var(--radius-sm);
+}
+.bulk-count {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.bulk-count #bulkSelectedCount { color: var(--accent); font-family: var(--font-mono); }
+.bulk-action-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ============ Pagination ============ */
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  border-top: 1px solid var(--border);
+}
+.pagination-info {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.pagination-page {
+  font-size: 13px;
+  font-family: var(--font-mono);
+  color: var(--text);
+  min-width: 70px;
+  text-align: center;
+}
+#paginationPrevBtn, #paginationNextBtn { padding: 0 10px; }
+#paginationPrevBtn:disabled, #paginationNextBtn:disabled { opacity: 0.4; cursor: not-allowed; }
+
 .product-table tbody td {
   padding: 14px 16px;
   border-bottom: 1px solid var(--border-soft);
@@ -714,12 +806,97 @@ input::placeholder, textarea::placeholder { color: var(--text-faint); }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 5px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
 
-/* ============ Responsive: mobile/tablet table ============ */
+/* ============ Responsive: tablet (horizontal scroll table) ============ */
 @media (max-width: 860px) {
   .app-header { padding: 12px 16px; }
   .app-main { padding: 14px; }
   .table-wrap { overflow-x: auto; }
   .product-table { min-width: 900px; }
+}
+
+/* ============ Responsive: phone (card layout) ============ */
+@media (max-width: 640px) {
+  .table-wrap { overflow-x: visible; }
+
+  .product-table { min-width: 0; width: 100%; }
+  .product-table thead { display: none; }
+
+  .product-table tbody { display: block; }
+
+  .product-table tbody tr {
+    display: block;
+    position: relative;
+    padding: 14px 16px 14px 44px;
+    border-bottom: 8px solid var(--bg);
+    background: var(--bg-card);
+  }
+  .product-table tbody tr:last-child { border-bottom: none; }
+
+  .product-table tbody td {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 6px 0;
+    border-bottom: none;
+    text-align: right;
+  }
+  .product-table tbody td.num { text-align: right; }
+
+  /* label ก่อนค่าของแต่ละ cell โดยใช้ data-label */
+  .product-table tbody td::before {
+    content: attr(data-label);
+    flex-shrink: 0;
+    text-align: left;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--text-faint);
+  }
+
+  /* รหัสสินค้า+ชื่อสินค้า เป็นหัวการ์ด ไม่ต้องมี label ซ้ำ ใหญ่กว่าปกติ */
+  .product-table tbody td.product-code {
+    order: -2;
+    font-size: 15px;
+    padding-bottom: 2px;
+  }
+  .product-table tbody td.product-code::before { content: ""; }
+  .product-table tbody td.product-name {
+    order: -1;
+    padding-top: 0;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border-soft);
+    margin-bottom: 6px;
+  }
+  .product-table tbody td.product-name::before { content: ""; }
+  .product-table tbody td.product-name-text-wrap { justify-content: flex-start; }
+
+  /* checkbox คอลัมน์ ลอยไว้มุมซ้ายบนของการ์ด */
+  .product-table tbody td.checkbox-col {
+    position: absolute;
+    top: 14px;
+    left: 12px;
+    padding: 0;
+    order: -3;
+  }
+  .product-table tbody td.checkbox-col::before { content: ""; }
+
+  /* ปุ่มจัดการ ลอยไว้มุมขวาบนของการ์ด แสดงตลอด ไม่ต้อง hover */
+  .product-table tbody td.actions-col {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    padding: 0;
+    order: -3;
+  }
+  .product-table tbody td.actions-col::before { content: ""; }
+  .row-actions { opacity: 1; transform: none; }
+
+  .order-condition { max-width: none; }
+
+  .bulk-action-bar { padding: 10px 14px; }
+  .pagination-bar { flex-direction: column; align-items: stretch; text-align: center; }
 }
 
 /* ==================================================
