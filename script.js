@@ -645,6 +645,7 @@ function renderProducts() {
       <td class="num" data-label="สเต็ป 3">${p.discount_step_3 != null ? formatMoney(p.discount_step_3) : '<span class="cell-empty">—</span>'}</td>
       <td class="num" data-label="สเต็ป 4">${p.discount_step_4 != null ? formatMoney(p.discount_step_4) : '<span class="cell-empty">—</span>'}</td>
       <td class="order-condition" data-label="เงื่อนไข">${p.order_condition ? escapeHtml(p.order_condition) : '<span class="cell-empty">—</span>'}</td>
+      <td class="price-date" data-label="อัปเดตราคาล่าสุด">${p.price_updated_at ? formatPrDate(p.price_updated_at) : '<span class="cell-empty">—</span>'}</td>
       <td class="actions-col" data-label="">
         <div class="row-actions">
           <button class="icon-btn" data-action="edit" data-id="${p.id}" title="แก้ไข" aria-label="แก้ไขสินค้า ${escapeHtml(p.product_name)}">
@@ -846,6 +847,20 @@ function bindModalEvents() {
   $('productForm').addEventListener('submit', onSaveProduct);
   $('productModal').addEventListener('click', (e) => { if (e.target === $('productModal')) closeProductModal(); });
 
+  productCalendar = createCalendarInstance({
+    hiddenInput: 'fPriceDate',
+    label: 'fPriceDateLabel',
+    trigger: 'fPriceDateTrigger',
+    popover: 'productCalendarPopover',
+    monthLabel: 'productCalMonthLabel',
+    grid: 'productCalendar',
+    prevBtn: 'productCalPrevMonth',
+    nextBtn: 'productCalNextMonth',
+    todayBtn: 'productCalTodayBtn',
+  }, () => { priceDateManuallySet = true; });
+  productCalendar.bind();
+
+
   $('closeDeleteModal').addEventListener('click', closeDeleteModal);
   $('cancelDelete').addEventListener('click', closeDeleteModal);
   $('confirmDelete').addEventListener('click', onConfirmDelete);
@@ -885,10 +900,17 @@ function openProductModal(productId) {
     $('fStep3').value = p.discount_step_3 ?? '';
     $('fStep4').value = p.discount_step_4 ?? '';
     $('fCondition').value = p.order_condition || '';
+    productCalendar.setDate(p.price_updated_at ? p.price_updated_at.slice(0, 10) : todayIso());
+    // เก็บค่าตั้งต้นไว้เทียบตอนบันทึก ว่าราคา/ส่วนลดถูกแก้ไขจริงหรือไม่
+    productFormOriginalPriceSnapshot = priceSnapshotOf(p);
+    priceDateManuallySet = false;
   } else {
     $('productModalTitle').textContent = 'เพิ่มสินค้าใหม่';
     $('productForm').reset();
     $('productId').value = '';
+    productCalendar.setDate(todayIso());
+    productFormOriginalPriceSnapshot = null;
+    priceDateManuallySet = false;
   }
 
   $('productModal').hidden = false;
@@ -902,6 +924,14 @@ function closeProductModal() {
   editingProductId = null;
 }
 
+function priceSnapshotOf(data) {
+  // ใช้เทียบว่าราคา/ส่วนลดถูกแก้ไขจริงหรือไม่ (ไม่รวม order_condition หรือฟิลด์อื่น)
+  return JSON.stringify([data.price, data.discount_step_1, data.discount_step_2, data.discount_step_3, data.discount_step_4]);
+}
+
+let productFormOriginalPriceSnapshot = null; // snapshot ราคา/ส่วนลดตอนเปิดฟอร์มแก้ไข (null = กำลังเพิ่มใหม่)
+let priceDateManuallySet = false; // true ถ้าผู้ใช้เลือกวันที่ในฟอร์มสินค้าเอง (ไม่ใช่ auto-stamp)
+
 function readProductForm() {
   return {
     product_code: $('fProductCode').value.trim(),
@@ -912,6 +942,7 @@ function readProductForm() {
     discount_step_3: $('fStep3').value === '' ? null : parseFloat($('fStep3').value),
     discount_step_4: $('fStep4').value === '' ? null : parseFloat($('fStep4').value),
     order_condition: $('fCondition').value.trim() || null,
+    price_updated_at: $('fPriceDate').value || todayIso(),
   };
 }
 
@@ -941,6 +972,13 @@ async function onSaveProduct(e) {
   if (!isDiscountStepOrderValid(formData)) {
     const proceed = confirm('สเต็ปส่วนลดที่กรอกไม่ได้เรียงจากมากไปน้อย (ราคาขั้นถัดไปแพงกว่าขั้นก่อนหน้า) ต้องการบันทึกต่อหรือไม่?');
     if (!proceed) return;
+  }
+
+  // ถ้าราคา/ส่วนลดถูกแก้ไขจริง และผู้ใช้ไม่ได้เลือกวันที่เองในฟอร์ม -> อัปเดต price_updated_at เป็นวันนี้อัตโนมัติ
+  // ถ้าผู้ใช้เลือกวันที่เองแล้ว (priceDateManuallySet) ให้เคารพค่าที่เลือกไว้เสมอ
+  const priceChanged = productFormOriginalPriceSnapshot !== null && productFormOriginalPriceSnapshot !== priceSnapshotOf(formData);
+  if ((priceChanged || productFormOriginalPriceSnapshot === null) && !priceDateManuallySet) {
+    formData.price_updated_at = todayIso();
   }
 
   btn.classList.add('is-loading');
@@ -1633,142 +1671,160 @@ const PR_STATUS_CYCLE = { pending: 'in_progress', in_progress: 'done', done: 'pe
 // ==================================================
 const CAL_DAY_HEADERS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const CAL_MONTH_NAMES_TH = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
-let calViewYear = null;   // ปีที่ปฏิทินกำลังแสดง (ค.ศ.)
-let calViewMonth = null;  // เดือนที่ปฏิทินกำลังแสดง (0-11)
 
 function todayIso() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function setPrDate(isoDate) {
-  $('fPrDate').value = isoDate;
-  $('fPrDateLabel').textContent = formatPrDate(isoDate);
-  const [y, m] = isoDate.split('-').map(Number);
-  calViewYear = y;
-  calViewMonth = m - 1;
-  renderCalendar();
-}
+// ---- Generic calendar instance factory ----
+// รองรับหลาย date picker พร้อมกันในหน้าเดียว (เช่น ฟอร์มขอราคา + ฟอร์มสินค้า)
+// ids: { hiddenInput, label, trigger, popover, monthLabel, grid, prevBtn, nextBtn, todayBtn }
+function createCalendarInstance(ids, onDateChange) {
+  const state = { year: null, month: null };
 
-function toggleCalendarPopover() {
-  const popover = $('prCalendarPopover');
-  if (popover.hidden) {
-    openCalendarPopover();
-  } else {
-    closeCalendarPopover();
+  function setDate(isoDate) {
+    $(ids.hiddenInput).value = isoDate;
+    $(ids.label).textContent = formatPrDate(isoDate);
+    const [y, m] = isoDate.split('-').map(Number);
+    state.year = y;
+    state.month = m - 1;
+    render();
+    if (onDateChange) onDateChange(isoDate);
   }
-}
 
-function openCalendarPopover() {
-  const current = $('fPrDate').value || todayIso();
-  const [y, m] = current.split('-').map(Number);
-  calViewYear = y;
-  calViewMonth = m - 1;
-  renderCalendar();
-  $('prCalendarPopover').hidden = false;
-  $('fPrDateTrigger').classList.add('is-open');
-  $('fPrDateTrigger').setAttribute('aria-expanded', 'true');
-}
+  function open() {
+    const current = $(ids.hiddenInput).value || todayIso();
+    const [y, m] = current.split('-').map(Number);
+    state.year = y;
+    state.month = m - 1;
+    render();
+    $(ids.popover).hidden = false;
+    $(ids.trigger).classList.add('is-open');
+    $(ids.trigger).setAttribute('aria-expanded', 'true');
+  }
 
-function closeCalendarPopover() {
-  $('prCalendarPopover').hidden = true;
-  $('fPrDateTrigger').classList.remove('is-open');
-  $('fPrDateTrigger').setAttribute('aria-expanded', 'false');
-}
+  function close() {
+    $(ids.popover).hidden = true;
+    $(ids.trigger).classList.remove('is-open');
+    $(ids.trigger).setAttribute('aria-expanded', 'false');
+  }
 
-function shiftCalendarMonth(delta) {
-  calViewMonth += delta;
-  if (calViewMonth < 0) { calViewMonth = 11; calViewYear--; }
-  if (calViewMonth > 11) { calViewMonth = 0; calViewYear++; }
-  renderCalendar();
-}
+  function toggle() {
+    if ($(ids.popover).hidden) open(); else close();
+  }
 
-function renderCalendar() {
-  $('calMonthLabel').textContent = `${CAL_MONTH_NAMES_TH[calViewMonth]} ${calViewYear + 543}`;
+  function shiftMonth(delta) {
+    state.month += delta;
+    if (state.month < 0) { state.month = 11; state.year--; }
+    if (state.month > 11) { state.month = 0; state.year++; }
+    render();
+  }
 
-  const calEl = $('calendar');
-  calEl.innerHTML = '';
+  function buildDay(dayNum, monthIndex, isOutside, selectedIso, todayIsoStr) {
+    const realDate = new Date(state.year, monthIndex, dayNum);
+    const iso = `${realDate.getFullYear()}-${String(realDate.getMonth() + 1).padStart(2, '0')}-${String(realDate.getDate()).padStart(2, '0')}`;
 
-  const headerFrag = document.createDocumentFragment();
-  CAL_DAY_HEADERS.forEach(d => {
     const li = document.createElement('li');
-    li.className = 'day';
-    li.textContent = d;
-    headerFrag.appendChild(li);
-  });
-  calEl.appendChild(headerFrag);
+    li.className = 'date' + (isOutside ? ' is-outside' : '');
 
-  const firstOfMonth = new Date(calViewYear, calViewMonth, 1);
-  // แปลง getDay() (0=อาทิตย์) ให้เริ่มสัปดาห์ที่จันทร์ (0=จันทร์ ... 6=อาทิตย์)
-  const leadingBlanks = (firstOfMonth.getDay() + 6) % 7;
-  const daysInMonth = new Date(calViewYear, calViewMonth + 1, 0).getDate();
-  const daysInPrevMonth = new Date(calViewYear, calViewMonth, 0).getDate();
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'calendar-day-btn';
+    if (iso === todayIsoStr) btn.classList.add('is-today');
+    if (iso === selectedIso) btn.classList.add('is-selected');
+    btn.textContent = String(dayNum);
+    btn.addEventListener('click', () => {
+      setDate(iso);
+      close();
+    });
 
-  const selectedIso = $('fPrDate').value;
-  const todayIsoStr = todayIso();
-  const bodyFrag = document.createDocumentFragment();
-
-  // วันจากเดือนก่อนหน้า (แสดงจางๆ ให้ grid เต็มแถว)
-  for (let i = leadingBlanks - 1; i >= 0; i--) {
-    const dayNum = daysInPrevMonth - i;
-    bodyFrag.appendChild(buildCalendarDay(dayNum, calViewMonth - 1, true, selectedIso, todayIsoStr));
-  }
-  // วันในเดือนนี้
-  for (let d = 1; d <= daysInMonth; d++) {
-    bodyFrag.appendChild(buildCalendarDay(d, calViewMonth, false, selectedIso, todayIsoStr));
-  }
-  // วันจากเดือนถัดไป (เติมให้ครบแถวสุดท้าย)
-  const totalCells = leadingBlanks + daysInMonth;
-  const trailingBlanks = (7 - (totalCells % 7)) % 7;
-  for (let d = 1; d <= trailingBlanks; d++) {
-    bodyFrag.appendChild(buildCalendarDay(d, calViewMonth + 1, true, selectedIso, todayIsoStr));
+    li.appendChild(btn);
+    return li;
   }
 
-  calEl.appendChild(bodyFrag);
+  function render() {
+    $(ids.monthLabel).textContent = `${CAL_MONTH_NAMES_TH[state.month]} ${state.year + 543}`;
+
+    const calEl = $(ids.grid);
+    calEl.innerHTML = '';
+
+    const headerFrag = document.createDocumentFragment();
+    CAL_DAY_HEADERS.forEach(d => {
+      const li = document.createElement('li');
+      li.className = 'day';
+      li.textContent = d;
+      headerFrag.appendChild(li);
+    });
+    calEl.appendChild(headerFrag);
+
+    const firstOfMonth = new Date(state.year, state.month, 1);
+    const leadingBlanks = (firstOfMonth.getDay() + 6) % 7;
+    const daysInMonth = new Date(state.year, state.month + 1, 0).getDate();
+    const daysInPrevMonth = new Date(state.year, state.month, 0).getDate();
+
+    const selectedIso = $(ids.hiddenInput).value;
+    const todayIsoStr = todayIso();
+    const bodyFrag = document.createDocumentFragment();
+
+    for (let i = leadingBlanks - 1; i >= 0; i--) {
+      const dayNum = daysInPrevMonth - i;
+      bodyFrag.appendChild(buildDay(dayNum, state.month - 1, true, selectedIso, todayIsoStr));
+    }
+    for (let d = 1; d <= daysInMonth; d++) {
+      bodyFrag.appendChild(buildDay(d, state.month, false, selectedIso, todayIsoStr));
+    }
+    const totalCells = leadingBlanks + daysInMonth;
+    const trailingBlanks = (7 - (totalCells % 7)) % 7;
+    for (let d = 1; d <= trailingBlanks; d++) {
+      bodyFrag.appendChild(buildDay(d, state.month + 1, true, selectedIso, todayIsoStr));
+    }
+
+    calEl.appendChild(bodyFrag);
+  }
+
+  function bind() {
+    $(ids.trigger).addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggle();
+    });
+    $(ids.prevBtn).addEventListener('click', () => shiftMonth(-1));
+    $(ids.nextBtn).addEventListener('click', () => shiftMonth(1));
+    $(ids.todayBtn).addEventListener('click', () => {
+      setDate(todayIso());
+      close();
+    });
+    document.addEventListener('click', (e) => {
+      const popover = $(ids.popover);
+      if (!popover.hidden && !popover.contains(e.target) && e.target !== $(ids.trigger) && !$(ids.trigger).contains(e.target)) {
+        close();
+      }
+    });
+  }
+
+  return { setDate, open, close, toggle, bind };
 }
 
-function buildCalendarDay(dayNum, monthIndex, isOutside, selectedIso, todayIsoStr) {
-  // จัดการ monthIndex ที่ล้นขอบ (-1 หรือ 12) ให้คำนวณปี/เดือนจริงถูกต้อง
-  const realDate = new Date(calViewYear, monthIndex, dayNum);
-  const iso = `${realDate.getFullYear()}-${String(realDate.getMonth() + 1).padStart(2, '0')}-${String(realDate.getDate()).padStart(2, '0')}`;
-
-  const li = document.createElement('li');
-  li.className = 'date' + (isOutside ? ' is-outside' : '');
-
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.className = 'calendar-day-btn';
-  if (iso === todayIsoStr) btn.classList.add('is-today');
-  if (iso === selectedIso) btn.classList.add('is-selected');
-  btn.textContent = String(dayNum);
-  btn.addEventListener('click', () => {
-    setPrDate(iso);
-    closeCalendarPopover();
-  });
-
-  li.appendChild(btn);
-  return li;
-}
+let prCalendar = null; // instance สำหรับฟอร์มงานขอราคา
+let productCalendar = null; // instance สำหรับฟอร์มสินค้า (วันที่อัปเดตราคา/ส่วนลด)
+function setPrDate(isoDate) { prCalendar.setDate(isoDate); }
+function closeCalendarPopover() { prCalendar.close(); }
 
 function bindPriceRequestEvents() {
   $('addPriceRequestBtn').addEventListener('click', () => openPrModal(null));
 
-  $('fPrDateTrigger').addEventListener('click', (e) => {
-    e.stopPropagation();
-    toggleCalendarPopover();
+  prCalendar = createCalendarInstance({
+    hiddenInput: 'fPrDate',
+    label: 'fPrDateLabel',
+    trigger: 'fPrDateTrigger',
+    popover: 'prCalendarPopover',
+    monthLabel: 'calMonthLabel',
+    grid: 'calendar',
+    prevBtn: 'calPrevMonth',
+    nextBtn: 'calNextMonth',
+    todayBtn: 'calTodayBtn',
   });
-  $('calPrevMonth').addEventListener('click', () => shiftCalendarMonth(-1));
-  $('calNextMonth').addEventListener('click', () => shiftCalendarMonth(1));
-  $('calTodayBtn').addEventListener('click', () => {
-    setPrDate(todayIso());
-    closeCalendarPopover();
-  });
-  document.addEventListener('click', (e) => {
-    const popover = $('prCalendarPopover');
-    if (!popover.hidden && !popover.contains(e.target) && e.target !== $('fPrDateTrigger') && !$('fPrDateTrigger').contains(e.target)) {
-      closeCalendarPopover();
-    }
-  });
+  prCalendar.bind();
 
   document.querySelectorAll('.pr-filter-chip').forEach(chip => {
     chip.addEventListener('click', () => {
