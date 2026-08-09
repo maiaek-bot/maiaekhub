@@ -21,16 +21,29 @@ create table if not exists public.products (
   product_code text unique not null,
   product_name text not null,
   price numeric(12,2) not null default 0,
-  discount_step_1 numeric(12,2),
-  discount_step_2 numeric(12,2),
-  discount_step_3 numeric(12,2),
-  discount_step_4 numeric(12,2),
+  discount_step_1 text,
+  discount_step_2 text,
+  discount_step_3 text,
+  discount_step_4 text,
   order_condition text,
   created_by uuid references auth.users(id),
   updated_by uuid references auth.users(id),
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  price_updated_at date not null default current_date
 );
+
+-- ---------- Migration: เพิ่มคอลัมน์ price_updated_at ให้ตาราง products ที่มีอยู่แล้ว ----------
+-- รันบรรทัดนี้ถ้าตาราง products มีอยู่แล้วในระบบก่อนหน้านี้ (ไม่ต้องรันถ้าเพิ่งสร้างตารางใหม่ด้วย script ด้านบน)
+alter table public.products add column if not exists price_updated_at date not null default current_date;
+
+-- ---------- Migration: เปลี่ยนสเต็ปส่วนลด 1-4 จากตัวเลขเป็นข้อความอิสระ ----------
+-- รันชุดนี้ถ้าตาราง products มีอยู่แล้วและคอลัมน์ discount_step_1-4 ยังเป็น numeric อยู่
+-- (แปลงข้อมูลเดิมเป็นข้อความอัตโนมัติ ไม่มีข้อมูลสูญหาย)
+alter table public.products alter column discount_step_1 type text using discount_step_1::text;
+alter table public.products alter column discount_step_2 type text using discount_step_2::text;
+alter table public.products alter column discount_step_3 type text using discount_step_3::text;
+alter table public.products alter column discount_step_4 type text using discount_step_4::text;
 
 -- ---------- ตาราง audit_logs (ประวัติการแก้ไข/ลบ) ----------
 create table if not exists public.audit_logs (
