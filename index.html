@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>MaiaekHub — จัดการสินค้าและราคา</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111111">
+<link rel="apple-touch-icon" href="favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
@@ -141,13 +144,29 @@
       </button>
     </div>
 
+    <div id="bulkActionBar" class="bulk-action-bar" hidden>
+      <span class="bulk-count"><span id="bulkSelectedCount">0</span> รายการที่เลือก</span>
+      <div class="bulk-action-buttons">
+        <button type="button" id="bulkExportBtn" class="btn btn-ghost btn-sm">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21V9"/><path d="m7 14 5-5 5 5"/><path d="M5 3h14"/></svg>
+          <span>ส่งออกที่เลือก</span>
+        </button>
+        <button type="button" id="bulkDeleteBtn" class="btn btn-danger btn-sm">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6"/></svg>
+          <span>ลบที่เลือก</span>
+        </button>
+        <button type="button" id="bulkClearBtn" class="btn btn-ghost btn-sm">ยกเลิก</button>
+      </div>
+    </div>
+
     <div class="table-wrap">
       <table class="product-table" id="productTable">
         <thead>
           <tr>
-            <th>รหัสสินค้า</th>
-            <th>ชื่อสินค้า</th>
-            <th class="num">ราคา</th>
+            <th class="checkbox-col"><input type="checkbox" id="selectAllCheckbox" aria-label="เลือกทั้งหมด"></th>
+            <th class="sortable" data-sort="product_code">รหัสสินค้า<span class="sort-arrow"></span></th>
+            <th class="sortable" data-sort="product_name">ชื่อสินค้า<span class="sort-arrow"></span></th>
+            <th class="num sortable" data-sort="price">ราคา<span class="sort-arrow"></span></th>
             <th class="num">สเต็ป 1</th>
             <th class="num">สเต็ป 2</th>
             <th class="num">สเต็ป 3</th>
@@ -160,6 +179,19 @@
           <!-- rows injected by script.js -->
         </tbody>
       </table>
+
+      <div id="paginationBar" class="pagination-bar" hidden>
+        <span class="pagination-info" id="paginationInfo"></span>
+        <div class="pagination-controls">
+          <button type="button" id="paginationPrevBtn" class="btn btn-ghost btn-sm" aria-label="หน้าก่อนหน้า">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
+          </button>
+          <span class="pagination-page" id="paginationPageLabel"></span>
+          <button type="button" id="paginationNextBtn" class="btn btn-ghost btn-sm" aria-label="หน้าถัดไป">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+          </button>
+        </div>
+      </div>
 
       <div id="emptyState" class="empty-state" hidden>
         <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
