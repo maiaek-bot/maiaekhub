@@ -941,6 +941,7 @@ function bindImportEvents() {
   $('importModal').addEventListener('click', (e) => { if (e.target === $('importModal')) closeImportModal(); });
 
   $('downloadTemplateBtn').addEventListener('click', downloadImportTemplate);
+  $('exportProductsBtn').addEventListener('click', exportProductsToCsv);
   $('importFileInput').addEventListener('change', onImportFileSelected);
   $('confirmImportBtn').addEventListener('click', onConfirmImport);
 }
@@ -980,6 +981,38 @@ function downloadImportTemplate() {
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+function csvEscapeField(value) {
+  const s = value === null || value === undefined ? '' : String(value);
+  // ถ้ามี comma, quote, หรือ newline ต้องครอบด้วย " และ escape " ภายในเป็น ""
+  if (/[",\n\r]/.test(s)) {
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
+}
+
+function exportProductsToCsv() {
+  if (!allProducts || allProducts.length === 0) {
+    showToast('ยังไม่มีข้อมูลสินค้าให้ส่งออก', 'error');
+    return;
+  }
+
+  const rows = allProducts.map(p => IMPORT_COLUMNS.map(col => csvEscapeField(p[col])).join(','));
+  const csvContent = IMPORT_COLUMNS.join(',') + '\n' + rows.join('\n') + '\n';
+
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const dateStr = new Date().toISOString().slice(0, 10);
+  a.download = `maiaekhub_products_${dateStr}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+
+  showToast(`ส่งออกข้อมูล ${allProducts.length} รายการเรียบร้อย`, 'success');
 }
 
 function onImportFileSelected(e) {
