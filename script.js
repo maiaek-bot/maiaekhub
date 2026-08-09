@@ -1035,11 +1035,14 @@ function normalizeImportRow(raw) {
   };
 
   const priceRaw = toNum(get('price'));
+  // ราคาว่าง (ยังไม่กรอก) ให้ default เป็น 0 แทนที่จะถือเป็น error
+  // เผื่อกรณีอยากเพิ่มรายการสินค้าไว้ก่อน แล้วค่อยมากรอกราคาทีหลัง
+  // ถ้ากรอกมาแต่เป็นค่าที่ parse เป็นตัวเลขไม่ได้ (เช่น "abc") ยังถือเป็น error เหมือนเดิม (priceRaw === undefined)
 
   return {
     product_code: get('product_code'),
     product_name: get('product_name'),
-    price: priceRaw,
+    price: priceRaw === null ? 0 : priceRaw,
     discount_step_1: toNum(get('discount_step_1')),
     discount_step_2: toNum(get('discount_step_2')),
     discount_step_3: toNum(get('discount_step_3')),
@@ -1071,9 +1074,9 @@ async function handleParsedRows(rawRows) {
     if (!row.product_code || !row.product_name) {
       status = 'error';
       note = 'ไม่มีรหัสสินค้า หรือ ชื่อสินค้า';
-    } else if (row.price === undefined || row.price === null) {
+    } else if (row.price === undefined) {
       status = 'error';
-      note = row.price === undefined ? 'ราคาไม่ใช่ตัวเลข' : 'ไม่มีราคา';
+      note = 'ราคาไม่ใช่ตัวเลข';
     } else if ([row.discount_step_1, row.discount_step_2, row.discount_step_3, row.discount_step_4].some(v => v === undefined)) {
       status = 'error';
       note = 'สเต็ปส่วนลดมีค่าที่ไม่ใช่ตัวเลข';
