@@ -25,8 +25,16 @@ let currentUser = null;      // auth user object
 let currentProfile = null;   // { id, username, role, email }
 let allProducts = [];        // cached product list
 let editingProductId = null; // null = adding new, string = editing existing
-let pendingDeleteProduct = null;
+let pendingDeleteProduct = null; // Product | Product[] (bulk delete)
 let currentCategoryFilter = 'all'; // 'all' | 'K06' | 'C04' | ... (คำนวณจากรหัสสินค้า)
+
+// ---- Sort / Pagination / Bulk select state (ตาราง products) ----
+let sortColumn = null;        // 'product_code' | 'product_name' | 'price' | null
+let sortDirection = 'asc';    // 'asc' | 'desc'
+let currentPage = 1;
+const PAGE_SIZE = 50;
+let selectedProductIds = new Set();
+let lastFilteredProducts = []; // เก็บผลลัพธ์ filter+sort ล่าสุด (ก่อนแบ่งหน้า) ไว้ใช้กับ export/bulk
 
 let allPriceRequests = [];       // cached price request list
 let priceRequestsLoaded = false; // lazy-load: fetch only when tab first opened
@@ -52,6 +60,15 @@ const toastEl = $('toast');
 // Init
 // ==================================================
 document.addEventListener('DOMContentLoaded', init);
+
+// ============ PWA: register service worker ============
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch((err) => {
+      console.warn('Service worker registration failed:', err);
+    });
+  });
+}
 
 async function init() {
   // bind UI events ก่อนเสมอ ไม่ว่า Supabase จะพร้อมใช้งานหรือไม่
@@ -347,9 +364,15 @@ function showAppScreen() {
 // App events (toolbar, search, add button)
 // ==================================================
 function bindAppEvents() {
-  $('searchInput').addEventListener('input', debounce(renderProducts, 150));
+  $('searchInput').addEventListener('input', debounce(() => {
+    currentPage = 1;
+    renderProducts();
+  }, 150));
   $('addProductBtn').addEventListener('click', () => openProductModal(null));
   $('historyBtn').addEventListener('click', openHistoryModal);
+  bindSortEvents();
+  bindBulkSelectionEvents();
+  bindPaginationEvents();
 }
 
 function debounce(fn, wait) {
@@ -530,24 +553,53 @@ function renderCategoryFilters() {
   wrap.querySelectorAll('.category-filter-chip').forEach(chip => {
     chip.addEventListener('click', () => {
       currentCategoryFilter = chip.dataset.category;
+      currentPage = 1;
       renderProducts();
     });
   });
 }
 
-function renderProducts() {
-  renderCategoryFilters();
-
+function getFilteredSortedProducts() {
   const query = $('searchInput').value.trim().toLowerCase();
   let filtered = query
     ? allProducts.filter(p =>
         (p.product_name || '').toLowerCase().includes(query) ||
         (p.product_code || '').toLowerCase().includes(query))
-    : allProducts;
+    : allProducts.slice();
 
   if (currentCategoryFilter !== 'all') {
     filtered = filtered.filter(p => getProductCategory(p.product_code) === currentCategoryFilter);
   }
+
+  if (sortColumn) {
+    const dir = sortDirection === 'asc' ? 1 : -1;
+    filtered.sort((a, b) => {
+      let av = a[sortColumn];
+      let bv = b[sortColumn];
+      if (sortColumn === 'price') {
+        av = Number(av) || 0;
+        bv = Number(bv) || 0;
+        return (av - bv) * dir;
+      }
+      av = (av || '').toString().toLowerCase();
+      bv = (bv || '').toString().toLowerCase();
+      return av.localeCompare(bv, 'th') * dir;
+    });
+  }
+
+  return filtered;
+}
+
+function renderProducts() {
+  renderCategoryFilters();
+
+  const filtered = getFilteredSortedProducts();
+  lastFilteredProducts = filtered;
+
+  // ตัด id ที่เลือกไว้แต่ไม่อยู่ใน filtered ปัจจุบันออก (กันเลือกค้างข้ามหมวด/คำค้น)
+  updateSortHeaderUI();
+
+  const query = $('searchInput').value.trim();
 
   const tbody = $('productTableBody');
   tbody.innerHTML = '';
@@ -559,29 +611,41 @@ function renderProducts() {
       : currentCategoryFilter !== 'all'
       ? `ไม่มีสินค้าในหมวด "${currentCategoryFilter}"`
       : 'ยังไม่มีข้อมูลสินค้า — เริ่มเพิ่มสินค้าแรกของคุณ';
+    $('paginationBar').hidden = true;
+    renderBulkBar();
     return;
   }
   $('emptyState').hidden = true;
 
+  // ---- Pagination ----
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  if (currentPage > totalPages) currentPage = totalPages;
+  if (currentPage < 1) currentPage = 1;
+  const startIdx = (currentPage - 1) * PAGE_SIZE;
+  const pageItems = filtered.slice(startIdx, startIdx + PAGE_SIZE);
+
   const canDel = canDelete();
 
-  filtered.forEach(p => {
+  pageItems.forEach(p => {
     const tr = document.createElement('tr');
+    const isSelected = selectedProductIds.has(p.id);
+    if (isSelected) tr.classList.add('is-selected');
     tr.innerHTML = `
-      <td class="product-code">${escapeHtml(p.product_code)}</td>
-      <td class="product-name">
+      <td class="checkbox-col"><input type="checkbox" class="row-select-checkbox" data-id="${p.id}" ${isSelected ? 'checked' : ''} aria-label="เลือกสินค้า ${escapeHtml(p.product_name)}"></td>
+      <td class="product-code" data-label="รหัสสินค้า">${escapeHtml(p.product_code)}</td>
+      <td class="product-name" data-label="ชื่อสินค้า">
         <span class="product-name-text">${escapeHtml(p.product_name)}</span>
         <button class="copy-btn" data-action="copy" data-id="${p.id}" title="คัดลอกรหัส + ชื่อสินค้า" aria-label="คัดลอกรหัสและชื่อสินค้า ${escapeHtml(p.product_name)}">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
         </button>
       </td>
-      <td class="num">${formatMoney(p.price)}</td>
-      <td class="num">${p.discount_step_1 != null ? formatMoney(p.discount_step_1) : '<span class="cell-empty">—</span>'}</td>
-      <td class="num">${p.discount_step_2 != null ? formatMoney(p.discount_step_2) : '<span class="cell-empty">—</span>'}</td>
-      <td class="num">${p.discount_step_3 != null ? formatMoney(p.discount_step_3) : '<span class="cell-empty">—</span>'}</td>
-      <td class="num">${p.discount_step_4 != null ? formatMoney(p.discount_step_4) : '<span class="cell-empty">—</span>'}</td>
-      <td class="order-condition">${p.order_condition ? escapeHtml(p.order_condition) : '<span class="cell-empty">—</span>'}</td>
-      <td class="actions-col">
+      <td class="num" data-label="ราคา">${formatMoney(p.price)}</td>
+      <td class="num" data-label="สเต็ป 1">${p.discount_step_1 != null ? formatMoney(p.discount_step_1) : '<span class="cell-empty">—</span>'}</td>
+      <td class="num" data-label="สเต็ป 2">${p.discount_step_2 != null ? formatMoney(p.discount_step_2) : '<span class="cell-empty">—</span>'}</td>
+      <td class="num" data-label="สเต็ป 3">${p.discount_step_3 != null ? formatMoney(p.discount_step_3) : '<span class="cell-empty">—</span>'}</td>
+      <td class="num" data-label="สเต็ป 4">${p.discount_step_4 != null ? formatMoney(p.discount_step_4) : '<span class="cell-empty">—</span>'}</td>
+      <td class="order-condition" data-label="เงื่อนไข">${p.order_condition ? escapeHtml(p.order_condition) : '<span class="cell-empty">—</span>'}</td>
+      <td class="actions-col" data-label="">
         <div class="row-actions">
           <button class="icon-btn" data-action="edit" data-id="${p.id}" title="แก้ไข" aria-label="แก้ไขสินค้า ${escapeHtml(p.product_name)}">
             <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
@@ -604,6 +668,139 @@ function renderProducts() {
   tbody.querySelectorAll('[data-action="copy"]').forEach(btn => {
     btn.addEventListener('click', () => copyProductCodeAndName(btn));
   });
+  tbody.querySelectorAll('.row-select-checkbox').forEach(cb => {
+    cb.addEventListener('change', () => onRowCheckboxChange(cb));
+  });
+
+  renderPaginationBar(filtered.length, totalPages, startIdx, pageItems.length);
+  updateSelectAllCheckboxState(pageItems);
+  renderBulkBar();
+}
+
+function renderPaginationBar(totalCount, totalPages, startIdx, pageItemCount) {
+  const bar = $('paginationBar');
+  if (totalCount <= PAGE_SIZE) {
+    bar.hidden = true;
+    return;
+  }
+  bar.hidden = false;
+  const from = startIdx + 1;
+  const to = startIdx + pageItemCount;
+  $('paginationInfo').textContent = `แสดง ${from}-${to} จาก ${totalCount} รายการ`;
+  $('paginationPageLabel').textContent = `หน้า ${currentPage} / ${totalPages}`;
+  $('paginationPrevBtn').disabled = currentPage <= 1;
+  $('paginationNextBtn').disabled = currentPage >= totalPages;
+}
+
+function bindPaginationEvents() {
+  $('paginationPrevBtn').addEventListener('click', () => {
+    if (currentPage > 1) { currentPage--; renderProducts(); }
+  });
+  $('paginationNextBtn').addEventListener('click', () => {
+    const totalPages = Math.max(1, Math.ceil(lastFilteredProducts.length / PAGE_SIZE));
+    if (currentPage < totalPages) { currentPage++; renderProducts(); }
+  });
+}
+
+// ---- Sortable column headers ----
+function bindSortEvents() {
+  document.querySelectorAll('.product-table thead th.sortable').forEach(th => {
+    th.addEventListener('click', () => {
+      const col = th.dataset.sort;
+      if (sortColumn === col) {
+        sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+      } else {
+        sortColumn = col;
+        sortDirection = 'asc';
+      }
+      currentPage = 1;
+      renderProducts();
+    });
+  });
+}
+
+function updateSortHeaderUI() {
+  document.querySelectorAll('.product-table thead th.sortable').forEach(th => {
+    th.classList.remove('is-sorted', 'is-sorted-asc', 'is-sorted-desc');
+    if (th.dataset.sort === sortColumn) {
+      th.classList.add('is-sorted', sortDirection === 'asc' ? 'is-sorted-asc' : 'is-sorted-desc');
+    }
+  });
+}
+
+// ---- Bulk selection ----
+function bindBulkSelectionEvents() {
+  $('selectAllCheckbox').addEventListener('change', (e) => {
+    // เลือก/ยกเลิกเฉพาะรายการที่แสดงอยู่ในหน้าปัจจุบัน
+    const startIdx = (currentPage - 1) * PAGE_SIZE;
+    const pageItems = lastFilteredProducts.slice(startIdx, startIdx + PAGE_SIZE);
+    if (e.target.checked) {
+      pageItems.forEach(p => selectedProductIds.add(p.id));
+    } else {
+      pageItems.forEach(p => selectedProductIds.delete(p.id));
+    }
+    renderProducts();
+  });
+
+  $('bulkClearBtn').addEventListener('click', () => {
+    selectedProductIds.clear();
+    renderProducts();
+  });
+  $('bulkDeleteBtn').addEventListener('click', onBulkDeleteClick);
+  $('bulkExportBtn').addEventListener('click', onBulkExportClick);
+}
+
+function onRowCheckboxChange(cb) {
+  const id = cb.dataset.id;
+  if (cb.checked) selectedProductIds.add(id);
+  else selectedProductIds.delete(id);
+
+  const tr = cb.closest('tr');
+  if (tr) tr.classList.toggle('is-selected', cb.checked);
+
+  const startIdx = (currentPage - 1) * PAGE_SIZE;
+  const pageItems = lastFilteredProducts.slice(startIdx, startIdx + PAGE_SIZE);
+  updateSelectAllCheckboxState(pageItems);
+  renderBulkBar();
+}
+
+function updateSelectAllCheckboxState(pageItems) {
+  const selectAll = $('selectAllCheckbox');
+  if (!pageItems || pageItems.length === 0) {
+    selectAll.checked = false;
+    selectAll.indeterminate = false;
+    return;
+  }
+  const selectedCount = pageItems.filter(p => selectedProductIds.has(p.id)).length;
+  selectAll.checked = selectedCount === pageItems.length;
+  selectAll.indeterminate = selectedCount > 0 && selectedCount < pageItems.length;
+}
+
+function renderBulkBar() {
+  const bar = $('bulkActionBar');
+  const count = selectedProductIds.size;
+  if (count === 0) {
+    bar.hidden = true;
+    return;
+  }
+  bar.hidden = false;
+  $('bulkSelectedCount').textContent = count;
+}
+
+function onBulkDeleteClick() {
+  if (!canDelete()) return;
+  const products = allProducts.filter(p => selectedProductIds.has(p.id));
+  if (products.length === 0) return;
+  pendingDeleteProduct = products; // array = bulk
+  $('deleteModalText').innerHTML = `ต้องการลบสินค้า <strong>${products.length} รายการ</strong> ที่เลือกไว้ใช่หรือไม่? การกระทำนี้ไม่สามารถย้อนกลับได้`;
+  $('deleteModal').hidden = false;
+  $('deleteModal').classList.add('is-visible');
+}
+
+function onBulkExportClick() {
+  const products = allProducts.filter(p => selectedProductIds.has(p.id));
+  if (products.length === 0) return;
+  exportProductsToCsv(products, 'ที่เลือก');
 }
 
 async function copyProductCodeAndName(btn) {
@@ -718,6 +915,17 @@ function readProductForm() {
   };
 }
 
+// ตรวจว่าสเต็ปส่วนลดเรียงจากมากไปน้อยหรือไม่ (ยิ่งซื้อเยอะ ราคาต่อหน่วยควรยิ่งถูกลง)
+// คืนค่า true ถ้าเรียงถูกต้อง (หรือว่างจนตรวจไม่ได้), false ถ้าผิดปกติ
+function isDiscountStepOrderValid(data) {
+  const steps = [data.price, data.discount_step_1, data.discount_step_2, data.discount_step_3, data.discount_step_4]
+    .filter(v => v != null && v !== '');
+  for (let i = 1; i < steps.length; i++) {
+    if (Number(steps[i]) > Number(steps[i - 1])) return false;
+  }
+  return true;
+}
+
 async function onSaveProduct(e) {
   e.preventDefault();
   const errorEl = $('productFormError');
@@ -728,6 +936,11 @@ async function onSaveProduct(e) {
   if (!formData.product_code || !formData.product_name) {
     setFieldError(errorEl, 'กรุณากรอกรหัสสินค้าและชื่อสินค้า');
     return;
+  }
+
+  if (!isDiscountStepOrderValid(formData)) {
+    const proceed = confirm('สเต็ปส่วนลดที่กรอกไม่ได้เรียงจากมากไปน้อย (ราคาขั้นถัดไปแพงกว่าขั้นก่อนหน้า) ต้องการบันทึกต่อหรือไม่?');
+    if (!proceed) return;
   }
 
   btn.classList.add('is-loading');
@@ -801,13 +1014,33 @@ async function onConfirmDelete() {
   btn.classList.add('is-loading');
   btn.disabled = true;
 
-  try {
-    const p = pendingDeleteProduct;
-    const { error } = await sb.from('products').delete().eq('id', p.id);
-    if (error) throw error;
+  const isBulk = Array.isArray(pendingDeleteProduct);
+  const products = isBulk ? pendingDeleteProduct : [pendingDeleteProduct];
 
-    await writeAuditLog('delete', p, p, null);
-    showToast('ลบสินค้าสำเร็จ', 'success');
+  try {
+    let deletedCount = 0;
+    const failedNames = [];
+
+    // ลบทีละแถว กันแถวเดียวพังแล้วล้มทั้งชุด — บอกได้ว่าตัวไหนพังจริง
+    for (const p of products) {
+      const { error } = await sb.from('products').delete().eq('id', p.id);
+      if (error) {
+        failedNames.push(p.product_name || p.product_code || p.id);
+        continue;
+      }
+      await writeAuditLog('delete', p, p, null);
+      deletedCount++;
+    }
+
+    if (failedNames.length === 0) {
+      showToast(isBulk ? `ลบสินค้าสำเร็จ ${deletedCount} รายการ` : 'ลบสินค้าสำเร็จ', 'success');
+    } else if (deletedCount > 0) {
+      showToast(`ลบสำเร็จ ${deletedCount} รายการ, ล้มเหลว ${failedNames.length} รายการ: ${failedNames.join(', ')}`, 'error');
+    } else {
+      showToast('ลบไม่สำเร็จทั้งหมด: ' + failedNames.join(', '), 'error');
+    }
+
+    selectedProductIds.clear();
     closeDeleteModal();
     await loadProducts();
   } catch (err) {
@@ -992,13 +1225,19 @@ function csvEscapeField(value) {
   return s;
 }
 
-function exportProductsToCsv() {
-  if (!allProducts || allProducts.length === 0) {
-    showToast('ยังไม่มีข้อมูลสินค้าให้ส่งออก', 'error');
+function exportProductsToCsv(productsOverride, labelOverride) {
+  // ไม่ระบุ list มาเอง -> export ตามตัวกรอง/คำค้นที่กำลังแสดงอยู่ตอนนี้ (ไม่ใช่ทั้งหมดเสมอไป)
+  const query = $('searchInput').value.trim();
+  const isFiltered = !!query || currentCategoryFilter !== 'all';
+  const products = productsOverride || (isFiltered ? getFilteredSortedProducts() : allProducts);
+  const label = labelOverride || (isFiltered ? 'ตามตัวกรองปัจจุบัน' : 'ทั้งหมด');
+
+  if (!products || products.length === 0) {
+    showToast('ไม่มีข้อมูลสินค้าให้ส่งออก', 'error');
     return;
   }
 
-  const rows = allProducts.map(p => IMPORT_COLUMNS.map(col => csvEscapeField(p[col])).join(','));
+  const rows = products.map(p => IMPORT_COLUMNS.map(col => csvEscapeField(p[col])).join(','));
   const csvContent = IMPORT_COLUMNS.join(',') + '\n' + rows.join('\n') + '\n';
 
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -1012,7 +1251,7 @@ function exportProductsToCsv() {
   a.remove();
   URL.revokeObjectURL(url);
 
-  showToast(`ส่งออกข้อมูล ${allProducts.length} รายการเรียบร้อย`, 'success');
+  showToast(`ส่งออกข้อมูล (${label}) ${products.length} รายการเรียบร้อย`, 'success');
 }
 
 function onImportFileSelected(e) {
@@ -1119,6 +1358,14 @@ async function handleParsedRows(rawRows) {
     } else if (existingCodes.has(row.product_code)) {
       status = 'duplicate';
       note = 'มีรหัสนี้อยู่แล้วในระบบ';
+    } else if (!isDiscountStepOrderValid(row)) {
+      status = 'warn';
+      note = 'สเต็ปส่วนลดไม่เรียงจากมากไปน้อย (ตรวจสอบก่อนนำเข้า)';
+    }
+
+    // ถ้าเป็นรายการซ้ำ ให้ตรวจสอบสเต็ปส่วนลดด้วยเช่นกัน (จะถูกอัปเดตทับถ้าเลือกโหมด "อัปเดต")
+    if (status === 'duplicate' && !isDiscountStepOrderValid(row)) {
+      note += ' — และสเต็ปส่วนลดไม่เรียงจากมากไปน้อย';
     }
 
     if (row.product_code) seenInFile.add(row.product_code);
@@ -1137,13 +1384,14 @@ function renderImportPreview() {
   const total = importParsedRows.length;
   const errorCount = importParsedRows.filter(r => r.status === 'error').length;
   const dupCount = importParsedRows.filter(r => r.status === 'duplicate').length;
+  const warnCount = importParsedRows.filter(r => r.status === 'warn').length;
   const okCount = total - errorCount;
 
   $('importSummaryText').textContent =
-    `พบทั้งหมด ${total} แถว — นำเข้าได้ ${okCount} แถว (ซ้ำกับของเดิม ${dupCount} แถว), มีปัญหา ${errorCount} แถว (จะถูกข้าม)`;
+    `พบทั้งหมด ${total} แถว — นำเข้าได้ ${okCount} แถว (ซ้ำกับของเดิม ${dupCount} แถว, สเต็ปส่วนลดผิดปกติ ${warnCount} แถว), มีปัญหา ${errorCount} แถว (จะถูกข้าม)`;
 
-  const statusLabel = { new: 'ใหม่', duplicate: 'ซ้ำ', error: 'ผิดพลาด' };
-  const statusClass = { new: 'success', duplicate: 'warn', error: 'error' };
+  const statusLabel = { new: 'ใหม่', duplicate: 'ซ้ำ', error: 'ผิดพลาด', warn: 'คำเตือน' };
+  const statusClass = { new: 'success', duplicate: 'warn', error: 'error', warn: 'warn' };
 
   const tbody = $('importPreviewBody');
   tbody.innerHTML = '';
@@ -1167,12 +1415,13 @@ async function onConfirmImport() {
   const duplicateMode = $('importDuplicateMode').value; // 'skip' | 'update'
   setFieldError($('importResultError'), '');
 
+  // 'new' และ 'warn' ทั้งคู่ insert ได้ (warn = สเต็ปส่วนลดผิดปกติ แต่ข้อมูลยังครบ ไม่บล็อก)
   const toInsert = importParsedRows
-    .filter(r => r.status === 'new')
-    .map(r => ({ ...r.data, created_by: currentUser.id, updated_by: currentUser.id }));
+    .filter(r => r.status === 'new' || r.status === 'warn')
+    .map(r => ({ row: r, payload: { ...r.data, created_by: currentUser.id, updated_by: currentUser.id } }));
 
   const toUpdate = duplicateMode === 'update'
-    ? importParsedRows.filter(r => r.status === 'duplicate').map(r => ({ ...r.data, updated_by: currentUser.id }))
+    ? importParsedRows.filter(r => r.status === 'duplicate').map(r => ({ row: r, payload: { ...r.data, updated_by: currentUser.id } }))
     : [];
 
   if (toInsert.length === 0 && toUpdate.length === 0) {
@@ -1186,32 +1435,43 @@ async function onConfirmImport() {
   try {
     let insertedCount = 0;
     let updatedCount = 0;
+    const failedRows = []; // { rowNum, product_code, message }
 
-    if (toInsert.length > 0) {
-      // bulk insert ทีเดียว แบ่งเป็นชุดละ 500 แถว เผื่อไฟล์ใหญ่
-      const chunkSize = 500;
-      for (let i = 0; i < toInsert.length; i += chunkSize) {
-        const chunk = toInsert.slice(i, i + chunkSize);
-        const { error } = await sb.from('products').insert(chunk);
-        if (error) throw error;
-        insertedCount += chunk.length;
+    // insert ทีละแถว (ไม่ใช่ chunk 500) — กันแถวเดียวพังแล้วล้มทั้งชุด และรู้ได้แน่ชัดว่าแถวไหนพังจริง
+    for (const { row, payload } of toInsert) {
+      const { error } = await sb.from('products').insert(payload);
+      if (error) {
+        failedRows.push({ rowNum: row.rowNum, product_code: row.data.product_code, message: error.message });
+        continue;
       }
+      insertedCount++;
     }
 
-    if (toUpdate.length > 0) {
-      // update ต้องทำทีละแถว เพราะแต่ละแถวมีเงื่อนไข product_code ต่างกัน
-      for (const row of toUpdate) {
-        const { error } = await sb
-          .from('products')
-          .update(row)
-          .eq('product_code', row.product_code);
-        if (error) throw error;
-        updatedCount++;
+    for (const { row, payload } of toUpdate) {
+      const { error } = await sb
+        .from('products')
+        .update(payload)
+        .eq('product_code', payload.product_code);
+      if (error) {
+        failedRows.push({ rowNum: row.rowNum, product_code: row.data.product_code, message: error.message });
+        continue;
       }
+      updatedCount++;
     }
 
-    showToast(`นำเข้าสำเร็จ: เพิ่มใหม่ ${insertedCount} รายการ${updatedCount ? `, อัปเดต ${updatedCount} รายการ` : ''}`, 'success');
-    closeImportModal();
+    if (failedRows.length === 0) {
+      showToast(`นำเข้าสำเร็จ: เพิ่มใหม่ ${insertedCount} รายการ${updatedCount ? `, อัปเดต ${updatedCount} รายการ` : ''}`, 'success');
+      closeImportModal();
+    } else {
+      const detail = failedRows
+        .slice(0, 5)
+        .map(f => `แถว ${f.rowNum} (${f.product_code || '—'}): ${f.message}`)
+        .join(' | ');
+      const more = failedRows.length > 5 ? ` และอีก ${failedRows.length - 5} แถว` : '';
+      setFieldError($('importResultError'),
+        `นำเข้าสำเร็จบางส่วน: เพิ่มใหม่ ${insertedCount} รายการ${updatedCount ? `, อัปเดต ${updatedCount} รายการ` : ''} — ล้มเหลว ${failedRows.length} แถว: ${detail}${more}`);
+    }
+
     await loadProducts();
   } catch (err) {
     setFieldError($('importResultError'), 'นำเข้าไม่สำเร็จ: ' + (err.message || 'เกิดข้อผิดพลาด'));
