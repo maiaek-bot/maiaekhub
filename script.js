@@ -971,7 +971,7 @@ function resetImportModal() {
 
 function downloadImportTemplate() {
   const csvContent = IMPORT_TEMPLATE_HEADER + '\n' + IMPORT_TEMPLATE_SAMPLE + '\n';
-  const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -1017,9 +1017,15 @@ function onImportFileSelected(e) {
 
 function normalizeImportRow(raw) {
   // รองรับ header ที่มีช่องว่าง/ตัวพิมพ์ใหญ่เล็กต่างกันเล็กน้อย
+  // และตัด BOM ที่บางโปรแกรม (Excel, Google Sheets) แอบใส่ไว้หน้าคอลัมน์แรกตอนเซฟ/export CSV
+  // ต้องกันทั้ง BOM ปกติ (\uFEFF) และ BOM ที่ถูก encode ผิดซ้อนเป็น UTF-8 สองรอบ (ปรากฏเป็น "ï»¿")
+  // ซึ่งเกิดได้บ่อยเวลาไฟล์เดิมมี BOM อยู่แล้วแล้วถูก Google Sheets เซฟทับอีกที
+  const stripBom = (s) => s.replace(/^(\uFEFF|\u00EF\u00BB\u00BF|ï»¿)+/, '');
+  const cleanKey = (k) => stripBom(k).trim().toLowerCase();
+
   const get = (key) => {
-    const foundKey = Object.keys(raw).find(k => k.trim().toLowerCase() === key);
-    return foundKey !== undefined ? String(raw[foundKey] ?? '').trim() : '';
+    const foundKey = Object.keys(raw).find(k => cleanKey(k) === key);
+    return foundKey !== undefined ? stripBom(String(raw[foundKey] ?? '')).trim() : '';
   };
 
   const toNum = (v) => {
