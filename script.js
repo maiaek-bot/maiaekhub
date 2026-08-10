@@ -1223,6 +1223,9 @@ function bindImportEvents() {
   $('downloadTemplateBtn').addEventListener('click', downloadImportTemplate);
   $('exportProductsBtn').addEventListener('click', exportProductsToCsv);
   $('importFileInput').addEventListener('change', onImportFileSelected);
+  $('importDuplicateMode').addEventListener('change', () => {
+    if (importParsedRows.length) renderImportPreview();
+  });
   $('confirmImportBtn').addEventListener('click', onConfirmImport);
 }
 
@@ -1247,7 +1250,7 @@ function resetImportModal() {
   $('importStepPreview').hidden = true;
   $('confirmImportBtn').hidden = true;
   $('importPreviewBody').innerHTML = '';
-  $('importDuplicateMode').value = 'skip';
+  $('importDuplicateMode').value = 'update';
 }
 
 function downloadImportTemplate() {
@@ -1371,6 +1374,42 @@ function normalizeImportRow(raw) {
   };
 }
 
+// เทียบค่าข้อความ (ชื่อ/เงื่อนไข/สเต็ปส่วนลด) — null, undefined, '' ถือว่าเหมือนกัน, ตัด whitespace หัวท้าย
+function normCompareText(v) {
+  if (v === null || v === undefined) return '';
+  return String(v).trim();
+}
+
+// เทียบราคา — กันปัญหาชนิดข้อมูลต่างกัน (string vs number จาก DB) และเศษทศนิยมเล็กน้อย
+function normComparePrice(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0;
+}
+
+// เทียบสินค้าเดิมในระบบ กับแถวที่นำเข้าใหม่ ว่ามีฟิลด์ไหนเปลี่ยนแปลงบ้าง
+// คืนค่า { changed, changedFields, priceChanged } — priceChanged ใช้ตัดสินว่าต้อง stamp price_updated_at ใหม่ไหม
+const IMPORT_COMPARE_FIELDS = [
+  { key: 'product_name', label: 'ชื่อสินค้า', norm: normCompareText },
+  { key: 'price', label: 'ราคา', norm: normComparePrice },
+  { key: 'discount_step_1', label: 'ส่วนลดขั้น 1', norm: normCompareText },
+  { key: 'discount_step_2', label: 'ส่วนลดขั้น 2', norm: normCompareText },
+  { key: 'discount_step_3', label: 'ส่วนลดขั้น 3', norm: normCompareText },
+  { key: 'discount_step_4', label: 'ส่วนลดขั้น 4', norm: normCompareText },
+  { key: 'order_condition', label: 'เงื่อนไขสั่งซื้อ', norm: normCompareText },
+];
+const IMPORT_PRICE_FIELD_KEYS = ['price', 'discount_step_1', 'discount_step_2', 'discount_step_3', 'discount_step_4'];
+
+function diffImportRow(existingProduct, newRow) {
+  const changedFields = IMPORT_COMPARE_FIELDS.filter(
+    (f) => f.norm(existingProduct[f.key]) !== f.norm(newRow[f.key])
+  );
+  return {
+    changed: changedFields.length > 0,
+    changedFields,
+    priceChanged: changedFields.some((f) => IMPORT_PRICE_FIELD_KEYS.includes(f.key)),
+  };
+}
+
 async function handleParsedRows(rawRows) {
   if (!rawRows || rawRows.length === 0) {
     setFieldError($('importPickError'), 'ไม่พบข้อมูลในไฟล์ที่เลือก');
@@ -1381,8 +1420,8 @@ async function handleParsedRows(rawRows) {
     return;
   }
 
-  // ดึงรหัสสินค้าที่มีอยู่แล้วในระบบ เพื่อตรวจสอบรายการซ้ำ
-  const existingCodes = new Set(allProducts.map(p => p.product_code));
+  // ดึงข้อมูลสินค้าที่มีอยู่แล้วในระบบ (product_code -> ตัวสินค้าเต็ม) เพื่อตรวจสอบรายการซ้ำ + เทียบว่ามีอะไรเปลี่ยนบ้าง
+  const existingByCode = new Map(allProducts.map(p => [p.product_code, p]));
   const seenInFile = new Set();
 
   const parsed = rawRows.map((raw, idx) => {
@@ -1390,6 +1429,8 @@ async function handleParsedRows(rawRows) {
     const rowNum = idx + 2; // +2 เพราะแถวที่ 1 คือ header
     let status = 'new';
     let note = '';
+    let diff = null;
+    let existingProduct = null;
 
     if (!row.product_code || !row.product_name) {
       status = 'error';
@@ -1400,9 +1441,13 @@ async function handleParsedRows(rawRows) {
     } else if (seenInFile.has(row.product_code)) {
       status = 'error';
       note = 'รหัสสินค้าซ้ำกันภายในไฟล์เดียวกัน';
-    } else if (existingCodes.has(row.product_code)) {
+    } else if (existingByCode.has(row.product_code)) {
       status = 'duplicate';
-      note = 'มีรหัสนี้อยู่แล้วในระบบ';
+      existingProduct = existingByCode.get(row.product_code);
+      diff = diffImportRow(existingProduct, row);
+      note = diff.changed
+        ? `มีรหัสนี้อยู่แล้ว — เปลี่ยน: ${diff.changedFields.map(f => f.label).join(', ')}`
+        : 'มีรหัสนี้อยู่แล้ว — ข้อมูลเหมือนเดิมทุกอย่าง (จะไม่แก้ไข)';
     } else if (!isDiscountStepOrderValid(row)) {
       status = 'warn';
       note = 'สเต็ปส่วนลดไม่เรียงจากมากไปน้อย (ตรวจสอบก่อนนำเข้า)';
@@ -1415,7 +1460,7 @@ async function handleParsedRows(rawRows) {
 
     if (row.product_code) seenInFile.add(row.product_code);
 
-    return { rowNum, data: row, status, note };
+    return { rowNum, data: row, status, note, diff, existingProduct };
   });
 
   importParsedRows = parsed;
@@ -1428,22 +1473,34 @@ function renderImportPreview() {
 
   const total = importParsedRows.length;
   const errorCount = importParsedRows.filter(r => r.status === 'error').length;
-  const dupCount = importParsedRows.filter(r => r.status === 'duplicate').length;
+  const dupChangedCount = importParsedRows.filter(r => r.status === 'duplicate' && r.diff?.changed).length;
+  const dupUnchangedCount = importParsedRows.filter(r => r.status === 'duplicate' && !r.diff?.changed).length;
   const warnCount = importParsedRows.filter(r => r.status === 'warn').length;
   const okCount = total - errorCount;
+  const duplicateMode = $('importDuplicateMode').value; // 'skip' | 'update'
+
+  const dupText = duplicateMode === 'update'
+    ? `ซ้ำกับของเดิม ${dupChangedCount + dupUnchangedCount} แถว (มีการเปลี่ยนแปลงจริง ${dupChangedCount} แถวจะถูกอัปเดต, เหมือนเดิมทุกอย่าง ${dupUnchangedCount} แถวจะไม่แตะ)`
+    : `ซ้ำกับของเดิม ${dupChangedCount + dupUnchangedCount} แถว (จะถูกข้ามทั้งหมด)`;
 
   $('importSummaryText').textContent =
-    `พบทั้งหมด ${total} แถว — นำเข้าได้ ${okCount} แถว (ซ้ำกับของเดิม ${dupCount} แถว, สเต็ปส่วนลดผิดปกติ ${warnCount} แถว), มีปัญหา ${errorCount} แถว (จะถูกข้าม)`;
+    `พบทั้งหมด ${total} แถว — ${dupText}, สเต็ปส่วนลดผิดปกติ ${warnCount} แถว, มีปัญหา ${errorCount} แถว (จะถูกข้าม)`;
 
-  const statusLabel = { new: 'ใหม่', duplicate: 'ซ้ำ', error: 'ผิดพลาด', warn: 'คำเตือน' };
+  const statusLabel = { new: 'ใหม่', duplicate: 'ซ้ำ - จะอัปเดต', error: 'ผิดพลาด', warn: 'คำเตือน' };
   const statusClass = { new: 'success', duplicate: 'warn', error: 'error', warn: 'warn' };
 
   const tbody = $('importPreviewBody');
   tbody.innerHTML = '';
   importParsedRows.forEach(r => {
     const tr = document.createElement('tr');
+    let label = statusLabel[r.status];
+    if (r.status === 'duplicate') {
+      label = duplicateMode === 'update'
+        ? (r.diff?.changed ? 'ซ้ำ - จะอัปเดต' : 'ซ้ำ - เหมือนเดิม')
+        : 'ซ้ำ - จะข้าม';
+    }
     tr.innerHTML = `
-      <td><span class="import-status import-status-${statusClass[r.status]}">${statusLabel[r.status]}</span></td>
+      <td><span class="import-status import-status-${statusClass[r.status]}">${label}</span></td>
       <td class="product-code">${escapeHtml(r.data.product_code || '(ว่าง)')}</td>
       <td class="product-name">${escapeHtml(r.data.product_name || '(ว่าง)')}</td>
       <td class="num">${r.data.price != null && r.data.price !== undefined ? formatMoney(r.data.price) : '—'}</td>
@@ -1465,9 +1522,20 @@ async function onConfirmImport() {
     .filter(r => r.status === 'new' || r.status === 'warn')
     .map(r => ({ row: r, payload: { ...r.data, created_by: currentUser.id, updated_by: currentUser.id } }));
 
+  // อัปเดตเฉพาะแถวที่เทียบแล้วมีอะไรเปลี่ยนจริง — ถ้าข้อมูลเหมือนเดิมทุกอย่าง ไม่ต้องยิง update ทิ้งไว้เฉยๆ
   const toUpdate = duplicateMode === 'update'
-    ? importParsedRows.filter(r => r.status === 'duplicate').map(r => ({ row: r, payload: { ...r.data, updated_by: currentUser.id } }))
+    ? importParsedRows
+        .filter(r => r.status === 'duplicate' && r.diff?.changed)
+        .map(r => {
+          const payload = { ...r.data, updated_by: currentUser.id };
+          // stamp วันที่แก้ไขราคาใหม่ เฉพาะตอนที่ราคา/สเต็ปส่วนลดเปลี่ยนจริง (ตรงตาม convention เดียวกับฟอร์มแก้ไขสินค้าปกติ)
+          if (r.diff.priceChanged) payload.price_updated_at = todayIso();
+          return { row: r, payload };
+        })
     : [];
+  const skippedUnchangedCount = duplicateMode === 'update'
+    ? importParsedRows.filter(r => r.status === 'duplicate' && !r.diff?.changed).length
+    : 0;
 
   if (toInsert.length === 0 && toUpdate.length === 0) {
     setFieldError($('importResultError'), 'ไม่มีแถวที่จะนำเข้า');
@@ -1493,19 +1561,24 @@ async function onConfirmImport() {
     }
 
     for (const { row, payload } of toUpdate) {
-      const { error } = await sb
+      const { data, error } = await sb
         .from('products')
         .update(payload)
-        .eq('product_code', payload.product_code);
+        .eq('product_code', payload.product_code)
+        .select()
+        .single();
       if (error) {
         failedRows.push({ rowNum: row.rowNum, product_code: row.data.product_code, message: error.message });
         continue;
       }
       updatedCount++;
+      await writeAuditLog('edit', data, row.existingProduct, data);
     }
 
+    const skippedNote = skippedUnchangedCount ? ` (ข้ามแบบไม่แก้ไข ${skippedUnchangedCount} รายการ เพราะข้อมูลเหมือนเดิมทุกอย่าง)` : '';
+
     if (failedRows.length === 0) {
-      showToast(`นำเข้าสำเร็จ: เพิ่มใหม่ ${insertedCount} รายการ${updatedCount ? `, อัปเดต ${updatedCount} รายการ` : ''}`, 'success');
+      showToast(`นำเข้าสำเร็จ: เพิ่มใหม่ ${insertedCount} รายการ${updatedCount ? `, อัปเดต ${updatedCount} รายการ` : ''}${skippedNote}`, 'success');
       closeImportModal();
     } else {
       const detail = failedRows
@@ -1514,7 +1587,7 @@ async function onConfirmImport() {
         .join(' | ');
       const more = failedRows.length > 5 ? ` และอีก ${failedRows.length - 5} แถว` : '';
       setFieldError($('importResultError'),
-        `นำเข้าสำเร็จบางส่วน: เพิ่มใหม่ ${insertedCount} รายการ${updatedCount ? `, อัปเดต ${updatedCount} รายการ` : ''} — ล้มเหลว ${failedRows.length} แถว: ${detail}${more}`);
+        `นำเข้าสำเร็จบางส่วน: เพิ่มใหม่ ${insertedCount} รายการ${updatedCount ? `, อัปเดต ${updatedCount} รายการ` : ''}${skippedNote} — ล้มเหลว ${failedRows.length} แถว: ${detail}${more}`);
     }
 
     await loadProducts();
