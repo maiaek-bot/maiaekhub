@@ -1223,6 +1223,7 @@ function bindImportEvents() {
   $('downloadTemplateBtn').addEventListener('click', downloadImportTemplate);
   $('exportProductsBtn').addEventListener('click', exportProductsToCsv);
   $('importFileInput').addEventListener('change', onImportFileSelected);
+  bindImportDropzone();
   $('importDuplicateMode').addEventListener('change', () => {
     if (importParsedRows.length) renderImportPreview();
   });
@@ -1251,6 +1252,11 @@ function resetImportModal() {
   $('confirmImportBtn').hidden = true;
   $('importPreviewBody').innerHTML = '';
   $('importDuplicateMode').value = 'update';
+
+  const zone = $('importDropzone');
+  const textEl = zone?.querySelector('.import-dropzone-text');
+  if (zone) zone.classList.remove('has-file', 'is-dragover');
+  if (textEl) textEl.innerHTML = 'ลากไฟล์มาวางตรงนี้ หรือ <span class="import-dropzone-link">คลิกเพื่อเลือกไฟล์</span>';
 }
 
 function downloadImportTemplate() {
@@ -1304,9 +1310,68 @@ function exportProductsToCsv(productsOverride, labelOverride) {
   showToast(`ส่งออกข้อมูล (${label}) ${products.length} รายการเรียบร้อย`, 'success');
 }
 
+function bindImportDropzone() {
+  const zone = $('importDropzone');
+  if (!zone) return;
+
+  // ไฟล์ที่ลากเข้ามาซ้อนกันหลาย element (svg/span) ข้างในทำให้ dragleave ยิงเกินจำเป็นระหว่างลากผ่าน
+  // นับ dragenter/dragleave คู่กันด้วย counter กันปัญหา flicker ของ .is-dragover
+  let dragCounter = 0;
+
+  ['dragenter', 'dragover', 'dragleave', 'drop'].forEach((evtName) => {
+    zone.addEventListener(evtName, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+  });
+
+  zone.addEventListener('dragenter', () => {
+    dragCounter++;
+    zone.classList.add('is-dragover');
+  });
+
+  zone.addEventListener('dragleave', () => {
+    dragCounter = Math.max(0, dragCounter - 1);
+    if (dragCounter === 0) zone.classList.remove('is-dragover');
+  });
+
+  zone.addEventListener('drop', (e) => {
+    dragCounter = 0;
+    zone.classList.remove('is-dragover');
+
+    const file = e.dataTransfer?.files?.[0];
+    if (!file) return;
+
+    // sync ให้ input file ตัวจริงมีค่าด้วย เผื่อโค้ดอื่นอ้างอิง $('importFileInput').files
+    try {
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      $('importFileInput').files = dt.files;
+    } catch {
+      // เบราว์เซอร์บางตัว (โดยเฉพาะ Safari เก่า) ไม่รองรับ DataTransfer constructor — ข้ามได้ ไม่กระทบการอ่านไฟล์
+    }
+
+    showSelectedFileName(file);
+    processImportFile(file);
+  });
+}
+
+function showSelectedFileName(file) {
+  const zone = $('importDropzone');
+  const textEl = zone?.querySelector('.import-dropzone-text');
+  if (!zone || !textEl) return;
+  zone.classList.add('has-file');
+  textEl.textContent = `เลือกไฟล์แล้ว: ${file.name}`;
+}
+
 function onImportFileSelected(e) {
   const file = e.target.files[0];
   if (!file) return;
+  showSelectedFileName(file);
+  processImportFile(file);
+}
+
+function processImportFile(file) {
   setFieldError($('importPickError'), '');
 
   const ext = file.name.split('.').pop().toLowerCase();
