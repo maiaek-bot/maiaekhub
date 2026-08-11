@@ -124,10 +124,16 @@ async function init() {
     return;
   }
 
+  // กัน loader ค้างจอตลอดกาลถ้า getSession()/handleSignedIn() แขวน (เน็ตหลุด, Supabase ตอบช้าผิดปกติ)
+  const withTimeout = (promise, ms) => Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms))
+  ]);
+
   try {
-    const { data: { session } } = await sb.auth.getSession();
+    const { data: { session } } = await withTimeout(sb.auth.getSession(), 8000);
     if (session) {
-      await handleSignedIn(session.user);
+      await withTimeout(handleSignedIn(session.user), 8000);
     } else {
       showAuthScreen();
     }
@@ -142,6 +148,7 @@ async function init() {
   } catch (err) {
     console.error('init session check failed:', err);
     showToast('เชื่อมต่อระบบไม่สำเร็จ กรุณาโหลดหน้าใหม่', 'error');
+    showAuthScreen(); // อย่างน้อยให้เห็นหน้า login แทนจอค้าง
   } finally {
     finishLoading();
   }
@@ -2717,21 +2724,4 @@ function bindRenamePoEvents() {
     e.preventDefault();
     dropzone.classList.remove('is-dragover');
     const files = Array.from(e.dataTransfer.files || []).filter(f => f.type === 'application/pdf');
-    if (files.length) setRenameSelectedFiles(files);
-  });
-
-  $('renameProcessBtn').addEventListener('click', processRenamePoFiles);
-}
-
-function setRenameSelectedFiles(files) {
-  renameSelectedFiles = files;
-  const countEl = $('renameFileCount');
-  const btn = $('renameProcessBtn');
-
-  if (files.length === 0) {
-    countEl.hidden = true;
-    btn.disabled = true;
-    return;
-  }
-
-  cou
+    if (files.length) setRen
