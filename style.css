@@ -176,7 +176,7 @@ button, input, textarea {
 /* ============ Auth Screen ============ */
 .auth-screen {
   min-height: 100vh;
-  display: flex;
+  display: none;
   align-items: center;
   justify-content: center;
   padding: 24px;
@@ -185,6 +185,28 @@ button, input, textarea {
     radial-gradient(circle at 85% 85%, rgba(53,208,168,0.05), transparent 40%),
     var(--bg);
 }
+.auth-screen.is-active { display: flex; }
+
+/* ============ Boot Loading (ป้องกันหน้า Login วาบก่อนเข้าแอป) ============ */
+#bootLoading {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  z-index: 9999;
+}
+#bootLoading.is-hidden { display: none; }
+.boot-spinner {
+  width: 34px;
+  height: 34px;
+  border: 3px solid rgba(53,208,168,0.2);
+  border-top-color: var(--accent, #35d0a8);
+  border-radius: 50%;
+  animation: boot-spin 0.7s linear infinite;
+}
+@keyframes boot-spin { to { transform: rotate(360deg); } }
 
 .auth-card {
   width: 100%;
