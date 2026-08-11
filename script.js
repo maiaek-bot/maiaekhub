@@ -52,7 +52,6 @@ let renameSelectedFiles = [];    // File[] queued for Rename_PO processing
 // ---------- DOM refs ----------
 const $ = (id) => document.getElementById(id);
 
-const appLoadingScreen = $('appLoadingScreen');
 const authScreen = $('authScreen');
 const appScreen = $('appScreen');
 const toastEl = $('toast');
@@ -71,6 +70,30 @@ if ('serviceWorker' in navigator) {
   });
 }
 
+// ==================================================
+// App Loader (splash กันหน้า Login กระพริบตอนเช็ค session)
+// ==================================================
+const APP_LOADER_MAX_MS = 1500; // เพดานสูงสุดที่ยอมให้ loader ค้าง (ไม่บังคับต้องอยู่ครบ)
+
+function playAppLoaderTypeText() {
+  const el = $('appLoaderText');
+  if (!el) return;
+  const full = 'Loading...';
+  el.textContent = '';
+  let i = 0;
+  const step = () => {
+    i++;
+    el.textContent = full.slice(0, i);
+    if (i < full.length) setTimeout(step, 70); // ~0.77s รวม ต่ำกว่าเพดาน 1.5s
+  };
+  step();
+}
+
+function hideAppLoader() {
+  const loader = $('appLoader');
+  if (loader) loader.classList.add('is-hidden');
+}
+
 async function init() {
   // bind UI events ก่อนเสมอ ไม่ว่า Supabase จะพร้อมใช้งานหรือไม่
   bindAuthTabs();
@@ -84,25 +107,25 @@ async function init() {
   bindVendorEvents();
   bindRenamePoEvents();
 
-  showLoadingScreen();
-  // หน่วงขั้นต่ำไว้ให้เห็นหน้า Loading ก่อนสลับไปหน้า Login/App จริง (กันการกระพริบ)
-  const minLoadingDelay = new Promise((resolve) => setTimeout(resolve, 1500));
+  playAppLoaderTypeText();
+  const loaderStart = Date.now();
+  // แสดง auth screen ที่ "ซ่อนไว้ข้างหลัง" loader ไว้ก่อน เผื่อ session check ช้า/พัง จะได้ไม่ค้างจอว่าง
+  showAuthScreen();
+
+  const finishLoading = () => {
+    const elapsed = Date.now() - loaderStart;
+    const remaining = Math.max(0, APP_LOADER_MAX_MS - elapsed);
+    setTimeout(hideAppLoader, remaining);
+  };
 
   if (supabaseInitError || !sb) {
-    await minLoadingDelay;
-    showAuthScreen();
     showToast('เชื่อมต่อระบบไม่สำเร็จ กรุณาโหลดหน้าใหม่ (Reload) หรือตรวจสอบการเชื่อมต่ออินเทอร์เน็ต', 'error');
+    finishLoading();
     return;
   }
 
   try {
-    // กัน getSession() ค้างไม่จำกัดเวลา (เช่น เน็ตช้า/หลุด/Supabase ไม่ตอบ)
-    // เดิมไม่มี timeout ครอบไว้ ถ้า request นี้ไม่ resolve หน้าจอ Loading จะค้างตลอดไป
-    const sessionTimeout = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('SESSION_TIMEOUT')), 8000)
-    );
-    const { data: { session } } = await Promise.race([sb.auth.getSession(), sessionTimeout]);
-    await minLoadingDelay;
+    const { data: { session } } = await sb.auth.getSession();
     if (session) {
       await handleSignedIn(session.user);
     } else {
@@ -118,13 +141,9 @@ async function init() {
     });
   } catch (err) {
     console.error('init session check failed:', err);
-    await minLoadingDelay;
-    showAuthScreen();
-    if (err && err.message === 'SESSION_TIMEOUT') {
-      showToast('เชื่อมต่อระบบช้าเกินไป กรุณาตรวจสอบอินเทอร์เน็ตแล้วโหลดหน้าใหม่', 'error');
-    } else {
-      showToast('เชื่อมต่อระบบไม่สำเร็จ กรุณาโหลดหน้าใหม่', 'error');
-    }
+    showToast('เชื่อมต่อระบบไม่สำเร็จ กรุณาโหลดหน้าใหม่', 'error');
+  } finally {
+    finishLoading();
   }
 }
 
@@ -310,34 +329,11 @@ async function onLogout() {
 async function handleSignedIn(user) {
   currentUser = user;
 
-  // กัน query โปรไฟล์ค้างไม่จำกัดเวลา (เช่น เน็ตช้า/หลุดระหว่างที่มี session ค้างอยู่)
-  // เดิมไม่มี timeout ครอบไว้ ถ้า request นี้ไม่ resolve หน้าจอ Loading จะค้างตลอดไป
-  // แม้ตอน init() จะผ่าน getSession() มาได้แล้วก็ตาม
-  let profileResult;
-  try {
-    const profileTimeout = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('PROFILE_TIMEOUT')), 8000)
-    );
-    profileResult = await Promise.race([
-      sb.from('profiles')
-        .select('id, username, role, email, display_name, avatar_url')
-        .eq('id', user.id)
-        .maybeSingle(),
-      profileTimeout
-    ]);
-  } catch (err) {
-    console.error('load profile failed/timeout:', err);
-    hideLoadingScreen();
-    showAuthScreen();
-    if (err && err.message === 'PROFILE_TIMEOUT') {
-      showToast('เชื่อมต่อระบบช้าเกินไป กรุณาตรวจสอบอินเทอร์เน็ตแล้วโหลดหน้าใหม่', 'error');
-    } else {
-      showToast('เชื่อมต่อระบบไม่สำเร็จ กรุณาโหลดหน้าใหม่', 'error');
-    }
-    return;
-  }
-
-  const { data: profile, error } = profileResult;
+  const { data: profile, error } = await sb
+    .from('profiles')
+    .select('id, username, role, email, display_name, avatar_url')
+    .eq('id', user.id)
+    .maybeSingle();
 
   if (error || !profile) {
     showToast('ไม่พบข้อมูลผู้ใช้งาน กรุณาลองใหม่', 'error');
@@ -390,24 +386,12 @@ function canDelete() {
 // ==================================================
 // Screen switching
 // ==================================================
-function showLoadingScreen() {
-  appLoadingScreen.style.display = 'flex';
-  authScreen.style.display = 'none';
-  appScreen.classList.remove('is-active');
-}
-
-function hideLoadingScreen() {
-  appLoadingScreen.style.display = 'none';
-}
-
 function showAuthScreen() {
-  hideLoadingScreen();
   authScreen.style.display = 'flex';
   appScreen.classList.remove('is-active');
 }
 
 function showAppScreen() {
-  hideLoadingScreen();
   authScreen.style.display = 'none';
   appScreen.classList.add('is-active');
 }
@@ -2719,4 +2703,35 @@ function bindRenamePoEvents() {
   dropzone.addEventListener('click', () => fileInput.click());
 
   fileInput.addEventListener('change', () => {
-    setRenameSelectedFiles(Array.from(fi
+    setRenameSelectedFiles(Array.from(fileInput.files || []));
+  });
+
+  dropzone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropzone.classList.add('is-dragover');
+  });
+  dropzone.addEventListener('dragleave', () => {
+    dropzone.classList.remove('is-dragover');
+  });
+  dropzone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropzone.classList.remove('is-dragover');
+    const files = Array.from(e.dataTransfer.files || []).filter(f => f.type === 'application/pdf');
+    if (files.length) setRenameSelectedFiles(files);
+  });
+
+  $('renameProcessBtn').addEventListener('click', processRenamePoFiles);
+}
+
+function setRenameSelectedFiles(files) {
+  renameSelectedFiles = files;
+  const countEl = $('renameFileCount');
+  const btn = $('renameProcessBtn');
+
+  if (files.length === 0) {
+    countEl.hidden = true;
+    btn.disabled = true;
+    return;
+  }
+
+  cou
