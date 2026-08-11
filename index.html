@@ -597,10 +597,17 @@
 
       <!-- Step 1: pick file -->
       <div id="importStepPick">
-        <p class="modal-text">
+        <label class="field" style="margin-bottom:14px;">
+          <span class="field-label">รูปแบบการนำเข้า</span>
+          <select id="importModeSelect">
+            <option value="full" selected>นำเข้าแบบเต็ม (เพิ่มรายการใหม่ + อัปเดตทุกฟิลด์)</option>
+            <option value="partial">ปรับปรุงเฉพาะบางฟิลด์ (map ด้วยรหัสสินค้า)</option>
+          </select>
+        </label>
+        <p class="modal-text" id="importModeHint">
           รองรับไฟล์ .csv, .xlsx, .xls — แถวแรกต้องเป็นหัวคอลัมน์ตามชื่อนี้:
           <br><code>product_code, product_name, price, discount_step_1, discount_step_2, discount_step_3, discount_step_4, order_condition</code>
-          <br>(จำเป็นเฉพาะ <code>product_code</code> และ <code>product_name</code> ส่วนที่เหลือเว้นว่างได้)
+          <br>(จำเป็นเฉพาะ <code>product_code</code> และ <code>product_name</code> ส่วนที่เหลือเว้นว่างได้ — รหัสใหม่จะถูกเพิ่ม, รหัสที่มีอยู่แล้วจะถูกอัปเดตทับทุกฟิลด์)
         </p>
         <button type="button" class="btn btn-ghost" id="downloadTemplateBtn">ดาวน์โหลดไฟล์ตัวอย่าง (CSV)</button>
         <div class="field" style="margin-top:16px;">
@@ -635,7 +642,7 @@
             <tbody id="importPreviewBody"></tbody>
           </table>
         </div>
-        <label class="field" style="margin-top:12px;">
+        <label class="field" style="margin-top:12px;" id="duplicateModeField">
           <span class="field-label">ถ้ารหัสสินค้าซ้ำกับที่มีอยู่แล้ว</span>
           <select id="importDuplicateMode">
             <option value="update" selected>อัปเดตเฉพาะข้อมูลที่เปลี่ยนแปลง (แนะนำ)</option>
