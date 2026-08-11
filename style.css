@@ -173,84 +173,6 @@ button, input, textarea {
 .brand-text h1 { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
 .brand-text p { margin: 2px 0 0; font-size: 13px; color: var(--text-dim); }
 
-/* ============ App Loading Screen ============ */
-.app-loading-screen {
-  min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background:
-    radial-gradient(circle at 20% 15%, rgba(53,208,168,0.07), transparent 45%),
-    radial-gradient(circle at 85% 85%, rgba(53,208,168,0.05), transparent 40%),
-    var(--bg);
-}
-
-@keyframes blinkCursor {
-  50% { border-right-color: transparent; }
-}
-@keyframes typeAndDelete {
-  0%, 10% { width: 0; }
-  45%, 55% { width: 6.2em; }
-  90%, 100% { width: 0; }
-}
-.terminal-loader {
-  border: 1px solid var(--border);
-  background-color: var(--bg-card);
-  color: var(--accent);
-  font-family: var(--font-mono);
-  font-size: 1em;
-  padding: 1.5em 1em;
-  width: 12em;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-  border-radius: var(--radius-sm);
-  position: relative;
-  overflow: hidden;
-  box-sizing: border-box;
-}
-.terminal-header {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1.5em;
-  background-color: var(--bg-elevated);
-  border-bottom: 1px solid var(--border);
-  border-top-left-radius: var(--radius-sm);
-  border-top-right-radius: var(--radius-sm);
-  padding: 0 0.4em;
-  box-sizing: border-box;
-}
-.terminal-controls { float: right; }
-.control {
-  display: inline-block;
-  width: 0.6em;
-  height: 0.6em;
-  margin-left: 0.4em;
-  margin-top: 0.45em;
-  border-radius: 50%;
-  background-color: var(--text-faint);
-}
-.control.close { background-color: var(--danger); }
-.control.minimize { background-color: var(--warn); }
-.control.maximize { background-color: var(--accent); }
-.terminal-title {
-  float: left;
-  line-height: 1.5em;
-  color: var(--text);
-  font-size: 0.85em;
-}
-.terminal-loader .text {
-  display: inline-block;
-  white-space: nowrap;
-  overflow: hidden;
-  border-right: 0.2em solid var(--accent);
-  animation:
-    typeAndDelete 4s steps(11) infinite,
-    blinkCursor 0.5s step-end infinite alternate;
-  margin-top: 1.5em;
-}
-
 /* ============ Auth Screen ============ */
 .auth-screen {
   min-height: 100vh;
@@ -1790,3 +1712,89 @@ img.profile-avatar-preview { display: block; }
   cursor: pointer;
 }
 .import-dropzone.has-file { border-style: solid; border-color: var(--accent-dim); }
+
+/* ============ App Loader (splash กันกระพริบหน้า Login ตอนโหลดหน้าเว็บ) ============ */
+/* ปรับจาก Uiverse.io by jeremyssocial ให้เข้าธีมเว็บ + เล่นครั้งเดียวจบ (ไม่วนลูป) */
+.app-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+}
+.app-loader.is-hidden { display: none; }
+
+.terminal-loader {
+  border: 1px solid var(--border);
+  background-color: var(--bg-card);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 1em;
+  padding: 1.5em 1em;
+  width: 12em;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+  border-radius: var(--radius-sm);
+  position: relative;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.terminal-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1.5em;
+  background-color: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+  border-top-left-radius: var(--radius-sm);
+  border-top-right-radius: var(--radius-sm);
+  padding: 0 0.4em;
+  box-sizing: border-box;
+}
+
+.terminal-controls { float: right; }
+
+.control {
+  display: inline-block;
+  width: 0.6em;
+  height: 0.6em;
+  margin-left: 0.4em;
+  margin-top: 0.45em;
+  border-radius: 50%;
+  background-color: #777;
+}
+.control.close { background-color: var(--danger); }
+.control.minimize { background-color: var(--warn); }
+.control.maximize { background-color: var(--accent); }
+
+.terminal-title {
+  float: left;
+  line-height: 1.5em;
+  color: var(--text-dim);
+  font-size: 0.85em;
+}
+
+/* ข้อความ "Loading..." พิมพ์ทีละตัวอักษรจนครบแล้วหยุด (ไม่ลบ ไม่วนซ้ำ) */
+.terminal-loader .text {
+  display: inline-block;
+  white-space: nowrap;
+  overflow: hidden;
+  border-right: 0.2em solid var(--accent);
+  width: 0;
+  margin-top: 1.5em;
+  animation:
+    typeOnce 0.9s steps(11, end) forwards,
+    blinkCursor 0.5s step-end infinite alternate;
+}
+
+@keyframes typeOnce {
+  from { width: 0; }
+  to { width: 6.2em; }
+}
+
+@keyframes blinkCursor {
+  50% { border-right-color: transparent; }
+}
