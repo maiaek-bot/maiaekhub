@@ -600,14 +600,16 @@
         <label class="field" style="margin-bottom:14px;">
           <span class="field-label">รูปแบบการนำเข้า</span>
           <select id="importModeSelect">
-            <option value="full" selected>นำเข้าแบบเต็ม (เพิ่มรายการใหม่ + อัปเดตทุกฟิลด์)</option>
-            <option value="partial">ปรับปรุงเฉพาะบางฟิลด์ (map ด้วยรหัสสินค้า)</option>
+            <option value="auto" selected>อัตโนมัติ (แนะนำ) — ตรวจจากคอลัมน์ในไฟล์เอง</option>
+            <option value="full">บังคับนำเข้าแบบเต็ม (เพิ่มรายการใหม่ + อัปเดตทุกฟิลด์)</option>
+            <option value="partial">บังคับปรับปรุงเฉพาะบางฟิลด์ (map ด้วยรหัสสินค้า)</option>
           </select>
         </label>
         <p class="modal-text" id="importModeHint">
-          รองรับไฟล์ .csv, .xlsx, .xls — แถวแรกต้องเป็นหัวคอลัมน์ตามชื่อนี้:
-          <br><code>product_code, product_name, price, discount_step_1, discount_step_2, discount_step_3, discount_step_4, order_condition</code>
-          <br>(จำเป็นเฉพาะ <code>product_code</code> และ <code>product_name</code> ส่วนที่เหลือเว้นว่างได้ — รหัสใหม่จะถูกเพิ่ม, รหัสที่มีอยู่แล้วจะถูกอัปเดตทับทุกฟิลด์)
+          รองรับไฟล์ .csv, .xlsx, .xls — ระบบจะดูคอลัมน์ในไฟล์แล้วเลือกให้เองว่าเป็นการนำเข้าแบบไหน:
+          <br>• ถ้าไฟล์มีคอลัมน์ <code>product_name</code> → ถือเป็นนำเข้าแบบเต็ม (รหัสใหม่ถูกเพิ่ม, รหัสเดิมถูกอัปเดตทับทุกฟิลด์ที่มีในไฟล์)
+          <br>• ถ้าไฟล์ไม่มีคอลัมน์ <code>product_name</code> → ถือเป็นปรับปรุงเฉพาะฟิลด์ที่มี โดย map ด้วย <code>product_code</code> (ใช้ได้เฉพาะรหัสที่มีอยู่แล้ว)
+          <br>คอลัมน์ที่ต้องมีเสมอ: <code>product_code</code>
         </p>
         <button type="button" class="btn btn-ghost" id="downloadTemplateBtn">ดาวน์โหลดไฟล์ตัวอย่าง (CSV)</button>
         <label class="field" id="importPresetField" style="margin-top:10px;" hidden>
