@@ -610,6 +610,17 @@
           <br>(จำเป็นเฉพาะ <code>product_code</code> และ <code>product_name</code> ส่วนที่เหลือเว้นว่างได้ — รหัสใหม่จะถูกเพิ่ม, รหัสที่มีอยู่แล้วจะถูกอัปเดตทับทุกฟิลด์)
         </p>
         <button type="button" class="btn btn-ghost" id="downloadTemplateBtn">ดาวน์โหลดไฟล์ตัวอย่าง (CSV)</button>
+        <label class="field" id="importPresetField" style="margin-top:10px;" hidden>
+          <span class="field-label">เทมเพลตด่วน (โหมดปรับปรุงเฉพาะบางฟิลด์)</span>
+          <select id="importPresetSelect">
+            <option value="custom" selected>กำหนดเอง (ครบทุกคอลัมน์ที่แก้ได้)</option>
+            <option value="rename">เปลี่ยนชื่อสินค้า</option>
+            <option value="price">แก้ไขราคา</option>
+            <option value="discount">แก้ไขส่วนลด (สเต็ป 1-4)</option>
+            <option value="condition">แก้เงื่อนไขสั่งซื้อ</option>
+            <option value="price_discount">แก้ราคา + ส่วนลด</option>
+          </select>
+        </label>
         <div class="field" style="margin-top:16px;">
           <span class="field-label">เลือกไฟล์</span>
           <label id="importDropzone" class="import-dropzone" for="importFileInput">
