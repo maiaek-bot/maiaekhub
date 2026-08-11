@@ -1213,6 +1213,17 @@ const IMPORT_TEMPLATE_HEADER = IMPORT_COLUMNS.join(',');
 const IMPORT_TEMPLATE_SAMPLE = 'SKU-001,ตัวอย่างสินค้า,100.00,90.00,85.00,80.00,75.00,สั่งขั้นต่ำ 10 ชิ้น';
 
 let importParsedRows = []; // rows after validation: { data, status: 'new'|'update'|'error', note }
+let importMode = 'full'; // 'full' = เพิ่ม/อัปเดตครบทุกฟิลด์ | 'partial' = ปรับปรุงเฉพาะคอลัมน์ที่มีในไฟล์ (map ด้วย product_code)
+let importUpdatableFields = []; // ฟิลด์ที่โหมด partial จะเทียบ/อัปเดตจริง (คำนวณจาก header ของไฟล์ที่เลือก ตอน handleParsedRows)
+
+const IMPORT_MODE_HINTS = {
+  full: 'รองรับไฟล์ .csv, .xlsx, .xls — แถวแรกต้องเป็นหัวคอลัมน์ตามชื่อนี้:'
+      + '<br><code>product_code, product_name, price, discount_step_1, discount_step_2, discount_step_3, discount_step_4, order_condition</code>'
+      + '<br>(จำเป็นเฉพาะ <code>product_code</code> และ <code>product_name</code> ส่วนที่เหลือเว้นว่างได้ — รหัสใหม่จะถูกเพิ่ม, รหัสที่มีอยู่แล้วจะถูกอัปเดตทับทุกฟิลด์)',
+  partial: 'ใช้กับรหัสสินค้าที่มีอยู่แล้วในระบบเท่านั้น (จะไม่เพิ่มรายการใหม่) — คอลัมน์ที่จำเป็น: <code>product_code</code>'
+      + '<br>ใส่เฉพาะคอลัมน์ที่ต้องการแก้ไข เช่น <code>product_code, price</code> หรือ <code>product_code, discount_step_1, order_condition</code>'
+      + '<br>คอลัมน์ที่ไม่ได้ใส่มาในไฟล์จะไม่ถูกแตะเลย ส่วนคอลัมน์ที่ใส่มาแต่เว้นค่าว่างไว้ในบางแถว จะถือว่าล้างค่านั้นให้ว่าง',
+};
 
 function bindImportEvents() {
   $('importProductsBtn').addEventListener('click', openImportModal);
@@ -1226,6 +1237,11 @@ function bindImportEvents() {
   bindImportDropzone();
   $('importDuplicateMode').addEventListener('change', () => {
     if (importParsedRows.length) renderImportPreview();
+  });
+  $('importModeSelect')?.addEventListener('change', (e) => {
+    importMode = e.target.value === 'partial' ? 'partial' : 'full';
+    const hintEl = $('importModeHint');
+    if (hintEl) hintEl.innerHTML = IMPORT_MODE_HINTS[importMode];
   });
   $('confirmImportBtn').addEventListener('click', onConfirmImport);
 }
@@ -1252,6 +1268,11 @@ function resetImportModal() {
   $('confirmImportBtn').hidden = true;
   $('importPreviewBody').innerHTML = '';
   $('importDuplicateMode').value = 'update';
+  importMode = 'full';
+  importUpdatableFields = [];
+  if ($('importModeSelect')) $('importModeSelect').value = 'full';
+  if ($('importModeHint')) $('importModeHint').innerHTML = IMPORT_MODE_HINTS.full;
+  if ($('duplicateModeField')) $('duplicateModeField').hidden = false;
 
   const zone = $('importDropzone');
   const textEl = zone?.querySelector('.import-dropzone-text');
@@ -1260,12 +1281,23 @@ function resetImportModal() {
 }
 
 function downloadImportTemplate() {
-  const csvContent = IMPORT_TEMPLATE_HEADER + '\n' + IMPORT_TEMPLATE_SAMPLE + '\n';
+  let csvContent, filename;
+  if (importMode === 'partial') {
+    // เทมเพลตโหมดปรับปรุงเฉพาะฟิลด์ — ไม่มี product_name เพราะไม่ใช่คอลัมน์บังคับ
+    // ผู้ใช้ลบคอลัมน์ที่ไม่ต้องการแก้ไขออกจากไฟล์ได้เลย เหลือแค่ product_code + คอลัมน์ที่จะแก้
+    const header = 'product_code,price,discount_step_1,discount_step_2,discount_step_3,discount_step_4,order_condition';
+    const sample = 'SKU-001,105.00,95.00,90.00,85.00,80.00,สั่งขั้นต่ำ 10 ชิ้น';
+    csvContent = header + '\n' + sample + '\n';
+    filename = 'maiaekhub_partial_update_template.csv';
+  } else {
+    csvContent = IMPORT_TEMPLATE_HEADER + '\n' + IMPORT_TEMPLATE_SAMPLE + '\n';
+    filename = 'maiaekhub_import_template.csv';
+  }
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'maiaekhub_import_template.csv';
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -1402,13 +1434,25 @@ function processImportFile(file) {
   }
 }
 
+// รองรับ header ที่มีช่องว่าง/ตัวพิมพ์ใหญ่เล็กต่างกันเล็กน้อย
+// และตัด BOM ที่บางโปรแกรม (Excel, Google Sheets) แอบใส่ไว้หน้าคอลัมน์แรกตอนเซฟ/export CSV
+// ต้องกันทั้ง BOM ปกติ (\uFEFF) และ BOM ที่ถูก encode ผิดซ้อนเป็น UTF-8 สองรอบ (ปรากฏเป็น "ï»¿")
+// ซึ่งเกิดได้บ่อยเวลาไฟล์เดิมมี BOM อยู่แล้วแล้วถูก Google Sheets เซฟทับอีกที
+// อยู่ระดับโมดูล (ไม่ใช่ในตัว normalizeImportRow) เพราะ getPresentImportColumns() ต้องใช้ตัวเดียวกันด้วย
+const stripBom = (s) => s.replace(/^(\uFEFF|\u00EF\u00BB\u00BF|ï»¿)+/, '');
+const cleanImportKey = (k) => stripBom(String(k)).trim().toLowerCase();
+
+// หาว่าไฟล์ที่เลือกมามีคอลัมน์อะไรอยู่จริงบ้าง (เทียบกับ header แถวแรก) — ใช้สำหรับโหมด partial
+// เพื่อไม่ให้แตะฟิลด์ที่ผู้ใช้ไม่ได้ตั้งใจจะแก้ (คอลัมน์ไม่มีในไฟล์ ≠ คอลัมน์มีแต่ค่าว่าง)
+function getPresentImportColumns(rawRows) {
+  const firstRow = rawRows && rawRows[0];
+  if (!firstRow) return new Set();
+  const keys = new Set(Object.keys(firstRow).map(cleanImportKey));
+  return new Set(IMPORT_COLUMNS.filter((col) => keys.has(col)));
+}
+
 function normalizeImportRow(raw) {
-  // รองรับ header ที่มีช่องว่าง/ตัวพิมพ์ใหญ่เล็กต่างกันเล็กน้อย
-  // และตัด BOM ที่บางโปรแกรม (Excel, Google Sheets) แอบใส่ไว้หน้าคอลัมน์แรกตอนเซฟ/export CSV
-  // ต้องกันทั้ง BOM ปกติ (\uFEFF) และ BOM ที่ถูก encode ผิดซ้อนเป็น UTF-8 สองรอบ (ปรากฏเป็น "ï»¿")
-  // ซึ่งเกิดได้บ่อยเวลาไฟล์เดิมมี BOM อยู่แล้วแล้วถูก Google Sheets เซฟทับอีกที
-  const stripBom = (s) => s.replace(/^(\uFEFF|\u00EF\u00BB\u00BF|ï»¿)+/, '');
-  const cleanKey = (k) => stripBom(k).trim().toLowerCase();
+  const cleanKey = cleanImportKey;
 
   const get = (key) => {
     const foundKey = Object.keys(raw).find(k => cleanKey(k) === key);
@@ -1464,8 +1508,8 @@ const IMPORT_COMPARE_FIELDS = [
 ];
 const IMPORT_PRICE_FIELD_KEYS = ['price', 'discount_step_1', 'discount_step_2', 'discount_step_3', 'discount_step_4'];
 
-function diffImportRow(existingProduct, newRow) {
-  const changedFields = IMPORT_COMPARE_FIELDS.filter(
+function diffImportRow(existingProduct, newRow, fieldsToCompare = IMPORT_COMPARE_FIELDS) {
+  const changedFields = fieldsToCompare.filter(
     (f) => f.norm(existingProduct[f.key]) !== f.norm(newRow[f.key])
   );
   return {
@@ -1488,6 +1532,50 @@ async function handleParsedRows(rawRows) {
   // ดึงข้อมูลสินค้าที่มีอยู่แล้วในระบบ (product_code -> ตัวสินค้าเต็ม) เพื่อตรวจสอบรายการซ้ำ + เทียบว่ามีอะไรเปลี่ยนบ้าง
   const existingByCode = new Map(allProducts.map(p => [p.product_code, p]));
   const seenInFile = new Set();
+
+  if (importMode === 'partial') {
+    const presentColumns = getPresentImportColumns(rawRows);
+    if (!presentColumns.has('product_code')) {
+      setFieldError($('importPickError'), 'ไฟล์นี้ต้องมีคอลัมน์ product_code');
+      return;
+    }
+    importUpdatableFields = IMPORT_COMPARE_FIELDS.filter((f) => presentColumns.has(f.key));
+    if (importUpdatableFields.length === 0) {
+      setFieldError($('importPickError'), 'ไม่พบคอลัมน์ที่จะปรับปรุง — ต้องมีอย่างน้อย 1 คอลัมน์นอกเหนือจาก product_code (เช่น price, discount_step_1, order_condition)');
+      return;
+    }
+
+    const parsed = rawRows.map((raw, idx) => {
+      const row = normalizeImportRow(raw);
+      const rowNum = idx + 2;
+      let status, note, diff = null, existingProduct = null;
+
+      if (!row.product_code) {
+        status = 'error';
+        note = 'ไม่มีรหัสสินค้า';
+      } else if (seenInFile.has(row.product_code)) {
+        status = 'error';
+        note = 'รหัสสินค้าซ้ำกันภายในไฟล์เดียวกัน';
+      } else if (!existingByCode.has(row.product_code)) {
+        status = 'error';
+        note = 'ไม่พบรหัสสินค้านี้ในระบบ — โหมดปรับปรุงเฉพาะฟิลด์ใช้ได้กับสินค้าที่มีอยู่แล้วเท่านั้น';
+      } else {
+        existingProduct = existingByCode.get(row.product_code);
+        diff = diffImportRow(existingProduct, row, importUpdatableFields);
+        status = 'duplicate';
+        note = diff.changed
+          ? `จะอัปเดต: ${diff.changedFields.map(f => f.label).join(', ')}`
+          : 'ไม่มีอะไรเปลี่ยนแปลงในคอลัมน์ที่ระบุ (จะไม่แก้ไข)';
+      }
+
+      if (row.product_code) seenInFile.add(row.product_code);
+      return { rowNum, data: row, status, note, diff, existingProduct };
+    });
+
+    importParsedRows = parsed;
+    renderImportPreview();
+    return;
+  }
 
   const parsed = rawRows.map((raw, idx) => {
     const row = normalizeImportRow(raw);
@@ -1542,14 +1630,17 @@ function renderImportPreview() {
   const dupUnchangedCount = importParsedRows.filter(r => r.status === 'duplicate' && !r.diff?.changed).length;
   const warnCount = importParsedRows.filter(r => r.status === 'warn').length;
   const okCount = total - errorCount;
-  const duplicateMode = $('importDuplicateMode').value; // 'skip' | 'update'
+  const duplicateMode = importMode === 'partial' ? 'update' : $('importDuplicateMode').value; // 'skip' | 'update'
+
+  if ($('duplicateModeField')) $('duplicateModeField').hidden = importMode === 'partial';
 
   const dupText = duplicateMode === 'update'
     ? `ซ้ำกับของเดิม ${dupChangedCount + dupUnchangedCount} แถว (มีการเปลี่ยนแปลงจริง ${dupChangedCount} แถวจะถูกอัปเดต, เหมือนเดิมทุกอย่าง ${dupUnchangedCount} แถวจะไม่แตะ)`
     : `ซ้ำกับของเดิม ${dupChangedCount + dupUnchangedCount} แถว (จะถูกข้ามทั้งหมด)`;
 
-  $('importSummaryText').textContent =
-    `พบทั้งหมด ${total} แถว — ${dupText}, สเต็ปส่วนลดผิดปกติ ${warnCount} แถว, มีปัญหา ${errorCount} แถว (จะถูกข้าม)`;
+  $('importSummaryText').textContent = importMode === 'partial'
+    ? `พบทั้งหมด ${total} แถว — จะปรับปรุงจริง ${dupChangedCount} แถว, ไม่มีอะไรเปลี่ยน ${dupUnchangedCount} แถว, มีปัญหา ${errorCount} แถว (จะถูกข้าม)`
+    : `พบทั้งหมด ${total} แถว — ${dupText}, สเต็ปส่วนลดผิดปกติ ${warnCount} แถว, มีปัญหา ${errorCount} แถว (จะถูกข้าม)`;
 
   const statusLabel = { new: 'ใหม่', duplicate: 'ซ้ำ - จะอัปเดต', error: 'ผิดพลาด', warn: 'คำเตือน' };
   const statusClass = { new: 'success', duplicate: 'warn', error: 'error', warn: 'warn' };
@@ -1560,9 +1651,13 @@ function renderImportPreview() {
     const tr = document.createElement('tr');
     let label = statusLabel[r.status];
     if (r.status === 'duplicate') {
-      label = duplicateMode === 'update'
-        ? (r.diff?.changed ? 'ซ้ำ - จะอัปเดต' : 'ซ้ำ - เหมือนเดิม')
-        : 'ซ้ำ - จะข้าม';
+      if (importMode === 'partial') {
+        label = r.diff?.changed ? 'จะอัปเดต' : 'ไม่มีอะไรเปลี่ยน';
+      } else {
+        label = duplicateMode === 'update'
+          ? (r.diff?.changed ? 'ซ้ำ - จะอัปเดต' : 'ซ้ำ - เหมือนเดิม')
+          : 'ซ้ำ - จะข้าม';
+      }
     }
     tr.innerHTML = `
       <td><span class="import-status import-status-${statusClass[r.status]}">${label}</span></td>
@@ -1579,11 +1674,11 @@ function renderImportPreview() {
 
 async function onConfirmImport() {
   const btn = $('confirmImportBtn');
-  const duplicateMode = $('importDuplicateMode').value; // 'skip' | 'update'
+  const duplicateMode = importMode === 'partial' ? 'update' : $('importDuplicateMode').value; // 'skip' | 'update'
   setFieldError($('importResultError'), '');
 
-  // 'new' และ 'warn' ทั้งคู่ insert ได้ (warn = สเต็ปส่วนลดผิดปกติ แต่ข้อมูลยังครบ ไม่บล็อก)
-  const toInsert = importParsedRows
+  // โหมด partial ไม่มีการเพิ่มรายการใหม่เลย (แถวที่ไม่พบรหัสในระบบถูกตีเป็น error ไปแล้วตอน parse)
+  const toInsert = importMode === 'partial' ? [] : importParsedRows
     .filter(r => r.status === 'new' || r.status === 'warn')
     .map(r => ({ row: r, payload: { ...r.data, created_by: currentUser.id, updated_by: currentUser.id } }));
 
@@ -1592,7 +1687,14 @@ async function onConfirmImport() {
     ? importParsedRows
         .filter(r => r.status === 'duplicate' && r.diff?.changed)
         .map(r => {
-          const payload = { ...r.data, updated_by: currentUser.id };
+          let payload;
+          if (importMode === 'partial') {
+            // ส่งเฉพาะฟิลด์ที่มีในไฟล์ + เปลี่ยนแปลงจริง — ไม่แตะฟิลด์อื่นที่ไม่ได้ระบุมาในไฟล์เด็ดขาด
+            payload = { product_code: r.data.product_code, updated_by: currentUser.id };
+            r.diff.changedFields.forEach((f) => { payload[f.key] = r.data[f.key]; });
+          } else {
+            payload = { ...r.data, updated_by: currentUser.id };
+          }
           // stamp วันที่แก้ไขราคาใหม่ เฉพาะตอนที่ราคา/สเต็ปส่วนลดเปลี่ยนจริง (ตรงตาม convention เดียวกับฟอร์มแก้ไขสินค้าปกติ)
           if (r.diff.priceChanged) payload.price_updated_at = todayIso();
           return { row: r, payload };
