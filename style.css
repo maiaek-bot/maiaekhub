@@ -318,6 +318,67 @@ select option {
 .app-title { margin: 0; font-size: 17px; font-weight: 700; }
 .app-header-right { display: flex; align-items: center; gap: 10px; }
 
+/* ---- Social links (header, adapted from Uiverse by Artahs) ---- */
+.social-links { list-style: none; display: flex; align-items: center; margin: 0; padding: 0; }
+.social-links .icon-content { margin: 0 4px; position: relative; }
+.social-links .icon-content .tooltip {
+  position: absolute;
+  top: -30px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--text);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  opacity: 0;
+  visibility: hidden;
+  font-size: 12px;
+  white-space: nowrap;
+  transition: all 0.3s ease;
+  pointer-events: none;
+  z-index: 60;
+}
+.social-links .icon-content:hover .tooltip { opacity: 1; visibility: visible; top: -34px; }
+.social-links .icon-content a {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  color: var(--text-dim);
+  background-color: var(--bg-card);
+  border: 1px solid var(--border);
+  transition: all 0.3s ease-in-out;
+}
+.social-links .icon-content a:hover { box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25); color: #fff; }
+.social-links .icon-content a svg { position: relative; z-index: 1; width: 16px; height: 16px; }
+.social-links .icon-content a .filled {
+  position: absolute;
+  top: auto;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 0;
+  background-color: #000;
+  transition: all 0.3s ease-in-out;
+}
+.social-links .icon-content a:hover .filled { height: 100%; }
+.social-links .icon-content a[data-social="discord"] .filled,
+.social-links .icon-content a[data-social="discord"] ~ .tooltip { background-color: #7289da; }
+.social-links .icon-content a[data-social="steam"] .filled,
+.social-links .icon-content a[data-social="steam"] ~ .tooltip { background-color: #171d25; }
+.social-links .icon-content a[data-social="instagram"] .filled,
+.social-links .icon-content a[data-social="instagram"] ~ .tooltip {
+  background: linear-gradient(45deg, #405de6, #5b51db, #b33ab4, #c135b4, #e1306c, #fd1f1f);
+}
+@media (max-width: 640px) {
+  .social-links { display: none; }
+}
+
 .user-badge {
   font-size: 13px;
   color: var(--text-dim);
