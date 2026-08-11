@@ -1213,14 +1213,19 @@ const IMPORT_TEMPLATE_HEADER = IMPORT_COLUMNS.join(',');
 const IMPORT_TEMPLATE_SAMPLE = 'SKU-001,ตัวอย่างสินค้า,100.00,90.00,85.00,80.00,75.00,สั่งขั้นต่ำ 10 ชิ้น';
 
 let importParsedRows = []; // rows after validation: { data, status: 'new'|'update'|'error', note }
-let importMode = 'full'; // 'full' = เพิ่ม/อัปเดตครบทุกฟิลด์ | 'partial' = ปรับปรุงเฉพาะคอลัมน์ที่มีในไฟล์ (map ด้วย product_code)
+let importMode = 'auto'; // ตัวเลือกที่ผู้ใช้ตั้ง: 'auto' | 'full' | 'partial'
+let importEffectiveMode = 'full'; // โหมดที่ใช้จริงหลัง parse ไฟล์แล้ว (ถ้า importMode === 'auto' จะคำนวณจาก header ของไฟล์)
 let importUpdatableFields = []; // ฟิลด์ที่โหมด partial จะเทียบ/อัปเดตจริง (คำนวณจาก header ของไฟล์ที่เลือก ตอน handleParsedRows)
 
 const IMPORT_MODE_HINTS = {
-  full: 'รองรับไฟล์ .csv, .xlsx, .xls — แถวแรกต้องเป็นหัวคอลัมน์ตามชื่อนี้:'
+  auto: 'รองรับไฟล์ .csv, .xlsx, .xls — ระบบจะดูคอลัมน์ในไฟล์แล้วเลือกให้เองว่าเป็นการนำเข้าแบบไหน:'
+      + '<br>• ถ้าไฟล์มีคอลัมน์ <code>product_name</code> → ถือเป็นนำเข้าแบบเต็ม (รหัสใหม่ถูกเพิ่ม, รหัสเดิมถูกอัปเดตทับทุกฟิลด์ที่มีในไฟล์)'
+      + '<br>• ถ้าไฟล์ไม่มีคอลัมน์ <code>product_name</code> → ถือเป็นปรับปรุงเฉพาะฟิลด์ที่มี โดย map ด้วย <code>product_code</code> (ใช้ได้เฉพาะรหัสที่มีอยู่แล้ว)'
+      + '<br>คอลัมน์ที่ต้องมีเสมอ: <code>product_code</code>',
+  full: 'บังคับนำเข้าแบบเต็ม — แถวแรกต้องเป็นหัวคอลัมน์:'
       + '<br><code>product_code, product_name, price, discount_step_1, discount_step_2, discount_step_3, discount_step_4, order_condition</code>'
-      + '<br>(จำเป็นเฉพาะ <code>product_code</code> และ <code>product_name</code> ส่วนที่เหลือเว้นว่างได้ — รหัสใหม่จะถูกเพิ่ม, รหัสที่มีอยู่แล้วจะถูกอัปเดตทับทุกฟิลด์)',
-  partial: 'ใช้กับรหัสสินค้าที่มีอยู่แล้วในระบบเท่านั้น (จะไม่เพิ่มรายการใหม่) — คอลัมน์ที่จำเป็น: <code>product_code</code>'
+      + '<br>(จำเป็นเฉพาะ <code>product_code</code> และ <code>product_name</code> ทุกแถว ส่วนที่เหลือเว้นว่างได้ — รหัสใหม่จะถูกเพิ่ม, รหัสที่มีอยู่แล้วจะถูกอัปเดตทับทุกฟิลด์)',
+  partial: 'บังคับปรับปรุงเฉพาะบางฟิลด์ — ใช้กับรหัสสินค้าที่มีอยู่แล้วในระบบเท่านั้น (จะไม่เพิ่มรายการใหม่) — คอลัมน์ที่จำเป็น: <code>product_code</code>'
       + '<br>ใส่เฉพาะคอลัมน์ที่ต้องการแก้ไข เช่น <code>product_code, price</code> หรือ <code>product_code, discount_step_1, order_condition</code>'
       + '<br>คอลัมน์ที่ไม่ได้ใส่มาในไฟล์จะไม่ถูกแตะเลย ส่วนคอลัมน์ที่ใส่มาแต่เว้นค่าว่างไว้ในบางแถว จะถือว่าล้างค่านั้นให้ว่าง'
       + '<br>เลือก "เทมเพลตด่วน" ด้านล่างเพื่อโหลดไฟล์ตัวอย่างที่มีเฉพาะคอลัมน์ที่ต้องใช้',
@@ -1280,7 +1285,7 @@ function bindImportEvents() {
     if (importParsedRows.length) renderImportPreview();
   });
   $('importModeSelect')?.addEventListener('change', (e) => {
-    importMode = e.target.value === 'partial' ? 'partial' : 'full';
+    importMode = ['full', 'partial'].includes(e.target.value) ? e.target.value : 'auto';
     const hintEl = $('importModeHint');
     if (hintEl) hintEl.innerHTML = IMPORT_MODE_HINTS[importMode];
     if ($('importPresetField')) $('importPresetField').hidden = importMode !== 'partial';
@@ -1310,10 +1315,11 @@ function resetImportModal() {
   $('confirmImportBtn').hidden = true;
   $('importPreviewBody').innerHTML = '';
   $('importDuplicateMode').value = 'update';
-  importMode = 'full';
+  importMode = 'auto';
+  importEffectiveMode = 'full';
   importUpdatableFields = [];
-  if ($('importModeSelect')) $('importModeSelect').value = 'full';
-  if ($('importModeHint')) $('importModeHint').innerHTML = IMPORT_MODE_HINTS.full;
+  if ($('importModeSelect')) $('importModeSelect').value = 'auto';
+  if ($('importModeHint')) $('importModeHint').innerHTML = IMPORT_MODE_HINTS.auto;
   if ($('importPresetField')) $('importPresetField').hidden = true;
   if ($('importPresetSelect')) $('importPresetSelect').value = 'custom';
   if ($('duplicateModeField')) $('duplicateModeField').hidden = false;
@@ -1575,8 +1581,13 @@ async function handleParsedRows(rawRows) {
   const existingByCode = new Map(allProducts.map(p => [p.product_code, p]));
   const seenInFile = new Set();
 
-  if (importMode === 'partial') {
-    const presentColumns = getPresentImportColumns(rawRows);
+  // 'auto' = ดูจากคอลัมน์ในไฟล์เอง — ไม่มีคอลัมน์ product_name แปลว่าไม่ได้ตั้งใจเปลี่ยนชื่อ ให้ถือเป็นปรับปรุงเฉพาะฟิลด์ที่มี (map ด้วย product_code)
+  const presentColumns = getPresentImportColumns(rawRows);
+  importEffectiveMode = importMode === 'auto'
+    ? (presentColumns.has('product_name') ? 'full' : 'partial')
+    : importMode;
+
+  if (importEffectiveMode === 'partial') {
     if (!presentColumns.has('product_code')) {
       setFieldError($('importPickError'), 'ไฟล์นี้ต้องมีคอลัมน์ product_code');
       return;
@@ -1672,17 +1683,21 @@ function renderImportPreview() {
   const dupUnchangedCount = importParsedRows.filter(r => r.status === 'duplicate' && !r.diff?.changed).length;
   const warnCount = importParsedRows.filter(r => r.status === 'warn').length;
   const okCount = total - errorCount;
-  const duplicateMode = importMode === 'partial' ? 'update' : $('importDuplicateMode').value; // 'skip' | 'update'
+  const duplicateMode = importEffectiveMode === 'partial' ? 'update' : $('importDuplicateMode').value; // 'skip' | 'update'
 
-  if ($('duplicateModeField')) $('duplicateModeField').hidden = importMode === 'partial';
+  if ($('duplicateModeField')) $('duplicateModeField').hidden = importEffectiveMode === 'partial';
+
+  const autoNote = importMode === 'auto'
+    ? (importEffectiveMode === 'partial' ? ' [ตรวจพบอัตโนมัติ: ไม่มีคอลัมน์ product_name → ปรับปรุงเฉพาะฟิลด์ที่มีในไฟล์]' : ' [ตรวจพบอัตโนมัติ: มีคอลัมน์ product_name → นำเข้าแบบเต็ม]')
+    : '';
 
   const dupText = duplicateMode === 'update'
     ? `ซ้ำกับของเดิม ${dupChangedCount + dupUnchangedCount} แถว (มีการเปลี่ยนแปลงจริง ${dupChangedCount} แถวจะถูกอัปเดต, เหมือนเดิมทุกอย่าง ${dupUnchangedCount} แถวจะไม่แตะ)`
     : `ซ้ำกับของเดิม ${dupChangedCount + dupUnchangedCount} แถว (จะถูกข้ามทั้งหมด)`;
 
-  $('importSummaryText').textContent = importMode === 'partial'
+  $('importSummaryText').textContent = (importEffectiveMode === 'partial'
     ? `พบทั้งหมด ${total} แถว — จะปรับปรุงจริง ${dupChangedCount} แถว, ไม่มีอะไรเปลี่ยน ${dupUnchangedCount} แถว, มีปัญหา ${errorCount} แถว (จะถูกข้าม)`
-    : `พบทั้งหมด ${total} แถว — ${dupText}, สเต็ปส่วนลดผิดปกติ ${warnCount} แถว, มีปัญหา ${errorCount} แถว (จะถูกข้าม)`;
+    : `พบทั้งหมด ${total} แถว — ${dupText}, สเต็ปส่วนลดผิดปกติ ${warnCount} แถว, มีปัญหา ${errorCount} แถว (จะถูกข้าม)`) + autoNote;
 
   const statusLabel = { new: 'ใหม่', duplicate: 'ซ้ำ - จะอัปเดต', error: 'ผิดพลาด', warn: 'คำเตือน' };
   const statusClass = { new: 'success', duplicate: 'warn', error: 'error', warn: 'warn' };
@@ -1693,7 +1708,7 @@ function renderImportPreview() {
     const tr = document.createElement('tr');
     let label = statusLabel[r.status];
     if (r.status === 'duplicate') {
-      if (importMode === 'partial') {
+      if (importEffectiveMode === 'partial') {
         label = r.diff?.changed ? 'จะอัปเดต' : 'ไม่มีอะไรเปลี่ยน';
       } else {
         label = duplicateMode === 'update'
@@ -1716,11 +1731,11 @@ function renderImportPreview() {
 
 async function onConfirmImport() {
   const btn = $('confirmImportBtn');
-  const duplicateMode = importMode === 'partial' ? 'update' : $('importDuplicateMode').value; // 'skip' | 'update'
+  const duplicateMode = importEffectiveMode === 'partial' ? 'update' : $('importDuplicateMode').value; // 'skip' | 'update'
   setFieldError($('importResultError'), '');
 
   // โหมด partial ไม่มีการเพิ่มรายการใหม่เลย (แถวที่ไม่พบรหัสในระบบถูกตีเป็น error ไปแล้วตอน parse)
-  const toInsert = importMode === 'partial' ? [] : importParsedRows
+  const toInsert = importEffectiveMode === 'partial' ? [] : importParsedRows
     .filter(r => r.status === 'new' || r.status === 'warn')
     .map(r => ({ row: r, payload: { ...r.data, created_by: currentUser.id, updated_by: currentUser.id } }));
 
@@ -1730,7 +1745,7 @@ async function onConfirmImport() {
         .filter(r => r.status === 'duplicate' && r.diff?.changed)
         .map(r => {
           let payload;
-          if (importMode === 'partial') {
+          if (importEffectiveMode === 'partial') {
             // ส่งเฉพาะฟิลด์ที่มีในไฟล์ + เปลี่ยนแปลงจริง — ไม่แตะฟิลด์อื่นที่ไม่ได้ระบุมาในไฟล์เด็ดขาด
             payload = { product_code: r.data.product_code, updated_by: currentUser.id };
             r.diff.changedFields.forEach((f) => { payload[f.key] = r.data[f.key]; });
