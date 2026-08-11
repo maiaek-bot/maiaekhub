@@ -1222,7 +1222,48 @@ const IMPORT_MODE_HINTS = {
       + '<br>(จำเป็นเฉพาะ <code>product_code</code> และ <code>product_name</code> ส่วนที่เหลือเว้นว่างได้ — รหัสใหม่จะถูกเพิ่ม, รหัสที่มีอยู่แล้วจะถูกอัปเดตทับทุกฟิลด์)',
   partial: 'ใช้กับรหัสสินค้าที่มีอยู่แล้วในระบบเท่านั้น (จะไม่เพิ่มรายการใหม่) — คอลัมน์ที่จำเป็น: <code>product_code</code>'
       + '<br>ใส่เฉพาะคอลัมน์ที่ต้องการแก้ไข เช่น <code>product_code, price</code> หรือ <code>product_code, discount_step_1, order_condition</code>'
-      + '<br>คอลัมน์ที่ไม่ได้ใส่มาในไฟล์จะไม่ถูกแตะเลย ส่วนคอลัมน์ที่ใส่มาแต่เว้นค่าว่างไว้ในบางแถว จะถือว่าล้างค่านั้นให้ว่าง',
+      + '<br>คอลัมน์ที่ไม่ได้ใส่มาในไฟล์จะไม่ถูกแตะเลย ส่วนคอลัมน์ที่ใส่มาแต่เว้นค่าว่างไว้ในบางแถว จะถือว่าล้างค่านั้นให้ว่าง'
+      + '<br>เลือก "เทมเพลตด่วน" ด้านล่างเพื่อโหลดไฟล์ตัวอย่างที่มีเฉพาะคอลัมน์ที่ต้องใช้',
+};
+
+// เทมเพลตด่วนสำหรับโหมด partial — คอลัมน์ตรงตามการใช้งานจริงแต่ละแบบ ไม่ต้องมาลบคอลัมน์เอง
+const IMPORT_PARTIAL_PRESETS = {
+  custom: {
+    label: 'กำหนดเอง (ครบทุกคอลัมน์ที่แก้ได้ — ลบคอลัมน์ที่ไม่ใช้ออกเอง)',
+    cols: ['product_code', 'price', 'discount_step_1', 'discount_step_2', 'discount_step_3', 'discount_step_4', 'order_condition'],
+    sample: ['SKU-001', '105.00', '95.00', '90.00', '85.00', '80.00', 'สั่งขั้นต่ำ 10 ชิ้น'],
+    filename: 'maiaekhub_partial_update_template.csv',
+  },
+  rename: {
+    label: 'เปลี่ยนชื่อสินค้า',
+    cols: ['product_code', 'product_name'],
+    sample: ['SKU-001', 'ชื่อสินค้าใหม่'],
+    filename: 'maiaekhub_partial_rename_template.csv',
+  },
+  price: {
+    label: 'แก้ไขราคา',
+    cols: ['product_code', 'price'],
+    sample: ['SKU-001', '105.00'],
+    filename: 'maiaekhub_partial_price_template.csv',
+  },
+  discount: {
+    label: 'แก้ไขส่วนลด (สเต็ป 1-4)',
+    cols: ['product_code', 'discount_step_1', 'discount_step_2', 'discount_step_3', 'discount_step_4'],
+    sample: ['SKU-001', '95.00', '90.00', '85.00', '80.00'],
+    filename: 'maiaekhub_partial_discount_template.csv',
+  },
+  condition: {
+    label: 'แก้เงื่อนไขสั่งซื้อ',
+    cols: ['product_code', 'order_condition'],
+    sample: ['SKU-001', 'สั่งขั้นต่ำ 10 ชิ้น'],
+    filename: 'maiaekhub_partial_condition_template.csv',
+  },
+  price_discount: {
+    label: 'แก้ราคา + ส่วนลด',
+    cols: ['product_code', 'price', 'discount_step_1', 'discount_step_2', 'discount_step_3', 'discount_step_4'],
+    sample: ['SKU-001', '105.00', '95.00', '90.00', '85.00', '80.00'],
+    filename: 'maiaekhub_partial_price_discount_template.csv',
+  },
 };
 
 function bindImportEvents() {
@@ -1242,6 +1283,7 @@ function bindImportEvents() {
     importMode = e.target.value === 'partial' ? 'partial' : 'full';
     const hintEl = $('importModeHint');
     if (hintEl) hintEl.innerHTML = IMPORT_MODE_HINTS[importMode];
+    if ($('importPresetField')) $('importPresetField').hidden = importMode !== 'partial';
   });
   $('confirmImportBtn').addEventListener('click', onConfirmImport);
 }
@@ -1272,6 +1314,8 @@ function resetImportModal() {
   importUpdatableFields = [];
   if ($('importModeSelect')) $('importModeSelect').value = 'full';
   if ($('importModeHint')) $('importModeHint').innerHTML = IMPORT_MODE_HINTS.full;
+  if ($('importPresetField')) $('importPresetField').hidden = true;
+  if ($('importPresetSelect')) $('importPresetSelect').value = 'custom';
   if ($('duplicateModeField')) $('duplicateModeField').hidden = false;
 
   const zone = $('importDropzone');
@@ -1283,12 +1327,10 @@ function resetImportModal() {
 function downloadImportTemplate() {
   let csvContent, filename;
   if (importMode === 'partial') {
-    // เทมเพลตโหมดปรับปรุงเฉพาะฟิลด์ — ไม่มี product_name เพราะไม่ใช่คอลัมน์บังคับ
-    // ผู้ใช้ลบคอลัมน์ที่ไม่ต้องการแก้ไขออกจากไฟล์ได้เลย เหลือแค่ product_code + คอลัมน์ที่จะแก้
-    const header = 'product_code,price,discount_step_1,discount_step_2,discount_step_3,discount_step_4,order_condition';
-    const sample = 'SKU-001,105.00,95.00,90.00,85.00,80.00,สั่งขั้นต่ำ 10 ชิ้น';
-    csvContent = header + '\n' + sample + '\n';
-    filename = 'maiaekhub_partial_update_template.csv';
+    const presetKey = $('importPresetSelect')?.value || 'custom';
+    const preset = IMPORT_PARTIAL_PRESETS[presetKey] || IMPORT_PARTIAL_PRESETS.custom;
+    csvContent = preset.cols.join(',') + '\n' + preset.cols.map((_, i) => csvEscapeField(preset.sample[i])).join(',') + '\n';
+    filename = preset.filename;
   } else {
     csvContent = IMPORT_TEMPLATE_HEADER + '\n' + IMPORT_TEMPLATE_SAMPLE + '\n';
     filename = 'maiaekhub_import_template.csv';
