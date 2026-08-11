@@ -310,11 +310,34 @@ async function onLogout() {
 async function handleSignedIn(user) {
   currentUser = user;
 
-  const { data: profile, error } = await sb
-    .from('profiles')
-    .select('id, username, role, email, display_name, avatar_url')
-    .eq('id', user.id)
-    .maybeSingle();
+  // กัน query โปรไฟล์ค้างไม่จำกัดเวลา (เช่น เน็ตช้า/หลุดระหว่างที่มี session ค้างอยู่)
+  // เดิมไม่มี timeout ครอบไว้ ถ้า request นี้ไม่ resolve หน้าจอ Loading จะค้างตลอดไป
+  // แม้ตอน init() จะผ่าน getSession() มาได้แล้วก็ตาม
+  let profileResult;
+  try {
+    const profileTimeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('PROFILE_TIMEOUT')), 8000)
+    );
+    profileResult = await Promise.race([
+      sb.from('profiles')
+        .select('id, username, role, email, display_name, avatar_url')
+        .eq('id', user.id)
+        .maybeSingle(),
+      profileTimeout
+    ]);
+  } catch (err) {
+    console.error('load profile failed/timeout:', err);
+    hideLoadingScreen();
+    showAuthScreen();
+    if (err && err.message === 'PROFILE_TIMEOUT') {
+      showToast('เชื่อมต่อระบบช้าเกินไป กรุณาตรวจสอบอินเทอร์เน็ตแล้วโหลดหน้าใหม่', 'error');
+    } else {
+      showToast('เชื่อมต่อระบบไม่สำเร็จ กรุณาโหลดหน้าใหม่', 'error');
+    }
+    return;
+  }
+
+  const { data: profile, error } = profileResult;
 
   if (error || !profile) {
     showToast('ไม่พบข้อมูลผู้ใช้งาน กรุณาลองใหม่', 'error');
@@ -2696,33 +2719,4 @@ function bindRenamePoEvents() {
   dropzone.addEventListener('click', () => fileInput.click());
 
   fileInput.addEventListener('change', () => {
-    setRenameSelectedFiles(Array.from(fileInput.files || []));
-  });
-
-  dropzone.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    dropzone.classList.add('is-dragover');
-  });
-  dropzone.addEventListener('dragleave', () => {
-    dropzone.classList.remove('is-dragover');
-  });
-  dropzone.addEventListener('drop', (e) => {
-    e.preventDefault();
-    dropzone.classList.remove('is-dragover');
-    const files = Array.from(e.dataTransfer.files || []).filter(f => f.type === 'application/pdf');
-    if (files.length) setRenameSelectedFiles(files);
-  });
-
-  $('renameProcessBtn').addEventListener('click', processRenamePoFiles);
-}
-
-function setRenameSelectedFiles(files) {
-  renameSelectedFiles = files;
-  const countEl = $('renameFileCount');
-  const btn = $('renameProcessBtn');
-
-  if (files.length === 0) {
-    countEl.hidden = true;
-    btn.disabled = true;
-    return;
-  }
+    setRenameSelectedFiles(Array.from(fi
