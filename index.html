@@ -20,8 +20,23 @@
 <!-- ============ Toast ============ -->
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
+<!-- ============ APP LOADING SCREEN ============ -->
+<section id="appLoadingScreen" class="app-loading-screen">
+  <div class="terminal-loader">
+    <div class="terminal-header">
+      <div class="terminal-title">Status</div>
+      <div class="terminal-controls">
+        <div class="control close"></div>
+        <div class="control minimize"></div>
+        <div class="control maximize"></div>
+      </div>
+    </div>
+    <div class="text">Loading...</div>
+  </div>
+</section>
+
 <!-- ============ LOGIN SCREEN ============ -->
-<section id="authScreen" class="auth-screen">
+<section id="authScreen" class="auth-screen" style="display:none;">
   <div class="auth-card">
     <div class="brand">
       <span class="brand-mark">M</span>
