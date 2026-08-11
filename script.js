@@ -96,7 +96,12 @@ async function init() {
   }
 
   try {
-    const { data: { session } } = await sb.auth.getSession();
+    // กัน getSession() ค้างไม่จำกัดเวลา (เช่น เน็ตช้า/หลุด/Supabase ไม่ตอบ)
+    // เดิมไม่มี timeout ครอบไว้ ถ้า request นี้ไม่ resolve หน้าจอ Loading จะค้างตลอดไป
+    const sessionTimeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('SESSION_TIMEOUT')), 8000)
+    );
+    const { data: { session } } = await Promise.race([sb.auth.getSession(), sessionTimeout]);
     await minLoadingDelay;
     if (session) {
       await handleSignedIn(session.user);
@@ -115,7 +120,11 @@ async function init() {
     console.error('init session check failed:', err);
     await minLoadingDelay;
     showAuthScreen();
-    showToast('เชื่อมต่อระบบไม่สำเร็จ กรุณาโหลดหน้าใหม่', 'error');
+    if (err && err.message === 'SESSION_TIMEOUT') {
+      showToast('เชื่อมต่อระบบช้าเกินไป กรุณาตรวจสอบอินเทอร์เน็ตแล้วโหลดหน้าใหม่', 'error');
+    } else {
+      showToast('เชื่อมต่อระบบไม่สำเร็จ กรุณาโหลดหน้าใหม่', 'error');
+    }
   }
 }
 
@@ -2717,20 +2726,3 @@ function setRenameSelectedFiles(files) {
     btn.disabled = true;
     return;
   }
-
-  countEl.hidden = false;
-  countEl.textContent = `เลือกแล้ว ${files.length} ไฟล์`;
-  btn.disabled = false;
-}
-
-function ensurePdfJsWorker() {
-  if (pdfJsWorkerConfigured) return;
-  if (typeof pdfjsLib === 'undefined') {
-    throw new Error('ไม่พบไลบรารี pdf.js — กรุณาโหลดหน้าใหม่');
-  }
-  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
-  pdfJsWorkerConfigured = true;
-}
-
-async function extractTextFromPdf(file) {
-  con
