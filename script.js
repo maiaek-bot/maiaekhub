@@ -52,6 +52,7 @@ let renameSelectedFiles = [];    // File[] queued for Rename_PO processing
 // ---------- DOM refs ----------
 const $ = (id) => document.getElementById(id);
 
+const appLoadingScreen = $('appLoadingScreen');
 const authScreen = $('authScreen');
 const appScreen = $('appScreen');
 const toastEl = $('toast');
@@ -83,15 +84,20 @@ async function init() {
   bindVendorEvents();
   bindRenamePoEvents();
 
-  showAuthScreen();
+  showLoadingScreen();
+  // หน่วงขั้นต่ำไว้ให้เห็นหน้า Loading ก่อนสลับไปหน้า Login/App จริง (กันการกระพริบ)
+  const minLoadingDelay = new Promise((resolve) => setTimeout(resolve, 1500));
 
   if (supabaseInitError || !sb) {
+    await minLoadingDelay;
+    showAuthScreen();
     showToast('เชื่อมต่อระบบไม่สำเร็จ กรุณาโหลดหน้าใหม่ (Reload) หรือตรวจสอบการเชื่อมต่ออินเทอร์เน็ต', 'error');
     return;
   }
 
   try {
     const { data: { session } } = await sb.auth.getSession();
+    await minLoadingDelay;
     if (session) {
       await handleSignedIn(session.user);
     } else {
@@ -107,6 +113,8 @@ async function init() {
     });
   } catch (err) {
     console.error('init session check failed:', err);
+    await minLoadingDelay;
+    showAuthScreen();
     showToast('เชื่อมต่อระบบไม่สำเร็จ กรุณาโหลดหน้าใหม่', 'error');
   }
 }
@@ -350,12 +358,24 @@ function canDelete() {
 // ==================================================
 // Screen switching
 // ==================================================
+function showLoadingScreen() {
+  appLoadingScreen.style.display = 'flex';
+  authScreen.style.display = 'none';
+  appScreen.classList.remove('is-active');
+}
+
+function hideLoadingScreen() {
+  appLoadingScreen.style.display = 'none';
+}
+
 function showAuthScreen() {
+  hideLoadingScreen();
   authScreen.style.display = 'flex';
   appScreen.classList.remove('is-active');
 }
 
 function showAppScreen() {
+  hideLoadingScreen();
   authScreen.style.display = 'none';
   appScreen.classList.add('is-active');
 }
@@ -1826,7 +1846,7 @@ async function onConfirmImport() {
 // ==================================================
 // Profile Edit (display name + avatar)
 // ==================================================
-const AVATAR_MAX_BYTES = 2 * 1024 * 1024; // 2MB
+const AVATAR_MAX_BYTES = 8 * 1024 * 1024; // 8MB
 let pendingAvatarFile = null; // ไฟล์รูปที่เลือกไว้ แต่ยังไม่อัปโหลดจนกว่าจะกด "บันทึก"
 
 function bindProfileEvents() {
@@ -1883,7 +1903,7 @@ function onProfileAvatarSelected(e) {
     return;
   }
   if (file.size > AVATAR_MAX_BYTES) {
-    setFieldError(errorEl, 'ไฟล์ใหญ่เกินไป (สูงสุด 2MB)');
+    setFieldError(errorEl, 'ไฟล์ใหญ่เกินไป (สูงสุด 8MB)');
     $('profileAvatarInput').value = '';
     return;
   }
@@ -2713,158 +2733,4 @@ function ensurePdfJsWorker() {
 }
 
 async function extractTextFromPdf(file) {
-  const arrayBuffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-  let fullText = '';
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
-    const text = await page.getTextContent();
-    fullText += text.items.map(item => item.str).join(' ');
-  }
-  return fullText;
-}
-
-function extractPoNumber(cleanText) {
-  const poMatch = cleanText.match(/เลขที่ใบสั่งซื้อ\s*[:|.-]?\s*([A-Z0-9]{6,})/i);
-  if (poMatch) return poMatch[1].trim();
-
-  const fallbackMatch = cleanText.match(/\b(26\d{6}|\d{8})\b/);
-  if (fallbackMatch) return fallbackMatch[1];
-
-  return null;
-}
-
-function extractVendorCode(cleanText) {
-  const vendorMatch = cleanText.match(/V\d{5,}/i);
-  return vendorMatch ? vendorMatch[0].toUpperCase() : null;
-}
-
-function findVendorName(vendorCode) {
-  if (!vendorCode) return null;
-  const match = allVendorMappings.find(v => (v.vendor_code || '').toUpperCase() === vendorCode);
-  return match ? match.vendor_name : null;
-}
-
-function sanitizeFileNamePart(str) {
-  // กันอักขระที่ใช้เป็นชื่อไฟล์ไม่ได้ (แต่คงภาษาไทย/อังกฤษ/ตัวเลขไว้)
-  return String(str).replace(/[\\/:*?"<>|]/g, '').trim();
-}
-
-function downloadPdfBlob(arrayBuffer, fileName) {
-  const blob = new Blob([arrayBuffer], { type: 'application/pdf' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = fileName;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  setTimeout(() => URL.revokeObjectURL(url), 4000);
-}
-
-function renderRenameStatus(index, state, fileName, detail) {
-  const list = $('renameStatusList');
-  let item = document.getElementById('renameStatus-' + index);
-
-  const icon = state === 'success'
-    ? '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>'
-    : state === 'error'
-    ? '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>'
-    : '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>';
-
-  const html = `
-    <span class="rename-status-icon">${icon}</span>
-    <span class="rename-status-name">${escapeHtml(fileName)}</span>
-    ${detail ? `<span class="rename-status-detail">${escapeHtml(detail)}</span>` : ''}
-  `;
-
-  if (item) {
-    item.className = 'rename-status-item is-' + state;
-    item.innerHTML = html;
-  } else {
-    item = document.createElement('div');
-    item.id = 'renameStatus-' + index;
-    item.className = 'rename-status-item is-' + state;
-    item.innerHTML = html;
-    list.appendChild(item);
-  }
-}
-
-async function processRenamePoFiles() {
-  if (renameSelectedFiles.length === 0) return;
-
-  const btn = $('renameProcessBtn');
-  const fileInput = $('renamePdfInput');
-  $('renameStatusList').innerHTML = '';
-  btn.disabled = true;
-  btn.classList.add('is-loading');
-
-  try {
-    ensurePdfJsWorker();
-  } catch (err) {
-    showToast(err.message, 'error');
-    btn.disabled = false;
-    btn.classList.remove('is-loading');
-    return;
-  }
-
-  // ให้แน่ใจว่าตาราง vendor mapping โหลดล่าสุดก่อนเริ่มจับคู่
-  if (!vendorMappingsLoaded) {
-    await loadVendorMappings();
-  }
-
-  let successCount = 0;
-  let errorCount = 0;
-
-  for (let i = 0; i < renameSelectedFiles.length; i++) {
-    const file = renameSelectedFiles[i];
-    renderRenameStatus(i, 'pending', file.name, 'กำลังอ่านไฟล์…');
-
-    try {
-      const arrayBuffer = await file.arrayBuffer();
-      const extractedText = await extractTextFromPdf(file);
-      const cleanText = extractedText.replace(/\s+/g, ' ');
-
-      const poNumber = extractPoNumber(cleanText);
-      const vendorCode = extractVendorCode(cleanText);
-      const vendorName = findVendorName(vendorCode);
-
-      if (!poNumber && !vendorCode) {
-        renderRenameStatus(i, 'error', file.name, 'ไม่พบเลข PO และรหัส Vendor ในไฟล์');
-        errorCount++;
-        continue;
-      }
-
-      const poPart = sanitizeFileNamePart(poNumber || 'UnknownPO');
-      const vendorPart = sanitizeFileNamePart(vendorName || vendorCode || 'UnknownVendor');
-      const newFileName = `${poPart}-${vendorPart}.pdf`;
-
-      downloadPdfBlob(arrayBuffer, newFileName);
-
-      const detailParts = [];
-      if (!poNumber) detailParts.push('ไม่พบเลข PO');
-      if (vendorCode && !vendorName) detailParts.push(`ไม่พบชื่อสำหรับรหัส ${vendorCode} ในตาราง Mapping`);
-      if (!vendorCode) detailParts.push('ไม่พบรหัส Vendor');
-
-      renderRenameStatus(i, 'success', newFileName, detailParts.join(' • '));
-      successCount++;
-    } catch (err) {
-      console.error('Rename PO error:', file.name, err);
-      renderRenameStatus(i, 'error', file.name, err.message || 'เกิดข้อผิดพลาดระหว่างประมวลผล');
-      errorCount++;
-    }
-  }
-
-  btn.disabled = false;
-  btn.classList.remove('is-loading');
-  fileInput.value = '';
-  renameSelectedFiles = [];
-  $('renameFileCount').hidden = true;
-  $('renameProcessBtn').disabled = true;
-
-  if (errorCount === 0) {
-    showToast(`ประมวลผลสำเร็จ ${successCount} ไฟล์`, 'success');
-  } else {
-    showToast(`สำเร็จ ${successCount} ไฟล์ / ผิดพลาด ${errorCount} ไฟล์`, successCount > 0 ? 'default' : 'error');
-  }
-}
+  con
