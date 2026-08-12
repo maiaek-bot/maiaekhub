@@ -1082,6 +1082,10 @@ img.profile-avatar-preview { display: block; }
 .view-tab:hover .filled, .view-tab.is-active .filled { height: 100%; }
 .view-tab:hover { color: var(--text); }
 .view-tab.is-active { color: var(--accent); border-bottom-color: var(--accent); }
+.view-tab[draggable="true"], .nav-dropdown[draggable="true"] { cursor: grab; }
+.view-tab.is-dragging, .nav-dropdown.is-dragging { opacity: 0.4; cursor: grabbing; }
+.view-tab.drag-over-before, .nav-dropdown.drag-over-before { box-shadow: -2px 0 0 var(--accent); }
+.view-tab.drag-over-after, .nav-dropdown.drag-over-after { box-shadow: 2px 0 0 var(--accent); }
 .view-tab-badge {
   display: inline-flex;
   align-items: center;
@@ -1105,6 +1109,13 @@ img.profile-avatar-preview { display: block; }
   gap: 8px;
   flex-wrap: wrap;
   flex: 1;
+}
+.pr-search-wrap {
+  flex: 0 1 280px;
+  min-width: 180px;
+}
+@media (max-width: 720px) {
+  .pr-search-wrap { flex: 1 1 100%; order: -1; }
 }
 .pr-filter-chip {
   display: inline-flex;
