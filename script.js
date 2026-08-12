@@ -41,6 +41,7 @@ let priceRequestsLoaded = false; // lazy-load: fetch only when tab first opened
 let editingPrId = null;          // null = adding new, string = editing existing
 let pendingDeletePr = null;
 let currentPrFilter = 'all';     // 'all' | 'pending' | 'in_progress' | 'done'
+let currentPrSearch = '';        // ค้นหาจากรายละเอียด หรือ ผู้ขอ
 let selectedPrSource = null;     // 'personal_chat' | 'group_chat' | 'cs_group'
 
 let allVendorMappings = [];      // cached vendor mapping list
@@ -284,6 +285,7 @@ async function onLogout() {
   allPriceRequests = [];
   priceRequestsLoaded = false;
   currentPrFilter = 'all';
+  currentPrSearch = '';
   showAuthScreen();
 }
 
@@ -314,6 +316,7 @@ async function handleSignedIn(user) {
 
   currentProfile = profile;
   applyRolePermissions();
+  applySavedTabOrder();
   showAppScreen();
   await loadProducts();
 }
@@ -408,6 +411,87 @@ function bindViewTabs() {
     const insideTrigger = $('toolsDropdown').contains(e.target);
     const insideMenu = $('toolsDropdownMenu').contains(e.target);
     if (!insideTrigger && !insideMenu) closeToolsDropdown();
+  });
+
+  bindTabDragReorder();
+}
+
+// ==================================================
+// View tabs — drag & drop reorder (เก็บลำดับต่อผู้ใช้ใน localStorage)
+// ==================================================
+function tabOrderStorageKey() {
+  const uid = currentUser && currentUser.id ? currentUser.id : 'anon';
+  return `maiaekhub:tabOrder:${uid}`;
+}
+
+function bindTabDragReorder() {
+  const nav = $('viewTabsNav');
+  let dragEl = null;
+
+  nav.querySelectorAll('[data-tab-key]').forEach(el => {
+    el.addEventListener('dragstart', (e) => {
+      // ไม่ให้เริ่มลากถ้าเมนู "เครื่องมือ" กำลังเปิดอยู่ (จะกวนกับการคลิกเปิดเมนู)
+      dragEl = el;
+      el.classList.add('is-dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      try { e.dataTransfer.setData('text/plain', el.dataset.tabKey); } catch (_) {}
+    });
+
+    el.addEventListener('dragend', () => {
+      el.classList.remove('is-dragging');
+      dragEl = null;
+      nav.querySelectorAll('[data-tab-key]').forEach(t => t.classList.remove('drag-over'));
+      saveCurrentTabOrder();
+    });
+
+    el.addEventListener('dragover', (e) => {
+      if (!dragEl || dragEl === el) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+
+      const rect = el.getBoundingClientRect();
+      const before = (e.clientX - rect.left) < rect.width / 2;
+      nav.querySelectorAll('[data-tab-key]').forEach(t => t.classList.remove('drag-over'));
+      el.classList.add('drag-over');
+      el.classList.toggle('drag-over-before', before);
+      el.classList.toggle('drag-over-after', !before);
+    });
+
+    el.addEventListener('drop', (e) => {
+      if (!dragEl || dragEl === el) return;
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const before = (e.clientX - rect.left) < rect.width / 2;
+      nav.insertBefore(dragEl, before ? el : el.nextSibling);
+      el.classList.remove('drag-over', 'drag-over-before', 'drag-over-after');
+    });
+  });
+}
+
+function saveCurrentTabOrder() {
+  const order = Array.from($('viewTabsNav').querySelectorAll('[data-tab-key]')).map(el => el.dataset.tabKey);
+  try {
+    localStorage.setItem(tabOrderStorageKey(), JSON.stringify(order));
+  } catch (_) { /* localStorage อาจไม่พร้อมใช้งาน — ข้ามไปเงียบๆ */ }
+}
+
+function applySavedTabOrder() {
+  let order;
+  try {
+    order = JSON.parse(localStorage.getItem(tabOrderStorageKey()) || 'null');
+  } catch (_) { order = null; }
+  if (!Array.isArray(order) || order.length === 0) return;
+
+  const nav = $('viewTabsNav');
+  const els = {};
+  nav.querySelectorAll('[data-tab-key]').forEach(el => { els[el.dataset.tabKey] = el; });
+
+  order.forEach(key => {
+    if (els[key]) nav.appendChild(els[key]);
+  });
+  // เผื่อมีแท็บใหม่ที่ยังไม่เคยถูกบันทึกลำดับไว้ ให้ต่อท้ายตามเดิม
+  Object.keys(els).forEach(key => {
+    if (!order.includes(key)) nav.appendChild(els[key]);
   });
 }
 
@@ -2141,6 +2225,11 @@ function bindPriceRequestEvents() {
     });
   });
 
+  $('prSearchInput').addEventListener('input', debounce(() => {
+    currentPrSearch = $('prSearchInput').value.trim().toLowerCase();
+    renderPriceRequests();
+  }, 150));
+
   document.querySelectorAll('.pr-source-opt').forEach(opt => {
     opt.addEventListener('click', () => {
       selectedPrSource = opt.dataset.source;
@@ -2207,9 +2296,16 @@ function updatePrTabBadge() {
 }
 
 function renderPriceRequests() {
-  const filtered = currentPrFilter === 'all'
+  let filtered = currentPrFilter === 'all'
     ? allPriceRequests
     : allPriceRequests.filter(r => r.status === currentPrFilter);
+
+  if (currentPrSearch) {
+    filtered = filtered.filter(r =>
+      (r.details || '').toLowerCase().includes(currentPrSearch) ||
+      (r.requested_by || '').toLowerCase().includes(currentPrSearch)
+    );
+  }
 
   const list = $('priceRequestList');
   list.innerHTML = '';
@@ -2218,9 +2314,13 @@ function renderPriceRequests() {
 
   if (filtered.length === 0) {
     $('prEmptyState').hidden = false;
-    $('prEmptyStateText').textContent = currentPrFilter === 'all'
-      ? 'ยังไม่มีงานขอราคา — เริ่มเพิ่มงานแรก'
-      : `ไม่มีงานสถานะ "${PR_STATUS_LABEL[currentPrFilter]}"`;
+    if (currentPrSearch) {
+      $('prEmptyStateText').textContent = `ไม่พบงานที่ตรงกับ "${$('prSearchInput').value.trim()}"`;
+    } else {
+      $('prEmptyStateText').textContent = currentPrFilter === 'all'
+        ? 'ยังไม่มีงานขอราคา — เริ่มเพิ่มงานแรก'
+        : `ไม่มีงานสถานะ "${PR_STATUS_LABEL[currentPrFilter]}"`;
+    }
     return;
   }
   $('prEmptyState').hidden = true;
@@ -2620,251 +2720,4 @@ async function onSaveVendor(e) {
 
 function openDeleteVendorModal(vendorId) {
   const v = allVendorMappings.find(x => x.id === vendorId);
-  if (!v) return;
-  pendingDeleteVendor = v;
-  $('deleteVendorModalText').innerHTML = `ต้องการลบ Vendor <strong>${escapeHtml(v.vendor_name)}</strong> (รหัส: ${escapeHtml(v.vendor_code)}) ใช่หรือไม่? การกระทำนี้ไม่สามารถย้อนกลับได้`;
-  $('deleteVendorModal').hidden = false;
-  $('deleteVendorModal').classList.add('is-visible');
-}
-
-function closeDeleteVendorModal() {
-  $('deleteVendorModal').classList.remove('is-visible');
-  $('deleteVendorModal').hidden = true;
-  pendingDeleteVendor = null;
-}
-
-async function onConfirmDeleteVendor() {
-  if (!pendingDeleteVendor) return;
-  const btn = $('confirmDeleteVendor');
-  btn.classList.add('is-loading');
-  btn.disabled = true;
-
-  try {
-    const v = pendingDeleteVendor;
-    const { error } = await sb.from('vendor_mappings').delete().eq('id', v.id);
-    if (error) throw error;
-
-    showToast('ลบ Vendor สำเร็จ', 'success');
-    closeDeleteVendorModal();
-    await loadVendorMappings();
-  } catch (err) {
-    showToast('ลบไม่สำเร็จ: ' + (err.message || 'เกิดข้อผิดพลาด'), 'error');
-  } finally {
-    btn.classList.remove('is-loading');
-    btn.disabled = false;
-  }
-}
-
-// ==================================================
-// Rename_PO Tool
-// ==================================================
-let pdfJsWorkerConfigured = false;
-
-function bindRenamePoEvents() {
-  const dropzone = $('renameDropzone');
-  const fileInput = $('renamePdfInput');
-
-  dropzone.addEventListener('click', () => fileInput.click());
-
-  fileInput.addEventListener('change', () => {
-    setRenameSelectedFiles(Array.from(fileInput.files || []));
-  });
-
-  dropzone.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    dropzone.classList.add('is-dragover');
-  });
-  dropzone.addEventListener('dragleave', () => {
-    dropzone.classList.remove('is-dragover');
-  });
-  dropzone.addEventListener('drop', (e) => {
-    e.preventDefault();
-    dropzone.classList.remove('is-dragover');
-    const files = Array.from(e.dataTransfer.files || []).filter(f => f.type === 'application/pdf');
-    if (files.length) setRenameSelectedFiles(files);
-  });
-
-  $('renameProcessBtn').addEventListener('click', processRenamePoFiles);
-}
-
-function setRenameSelectedFiles(files) {
-  renameSelectedFiles = files;
-  const countEl = $('renameFileCount');
-  const btn = $('renameProcessBtn');
-
-  if (files.length === 0) {
-    countEl.hidden = true;
-    btn.disabled = true;
-    return;
-  }
-
-  countEl.hidden = false;
-  countEl.textContent = `เลือกแล้ว ${files.length} ไฟล์`;
-  btn.disabled = false;
-}
-
-function ensurePdfJsWorker() {
-  if (pdfJsWorkerConfigured) return;
-  if (typeof pdfjsLib === 'undefined') {
-    throw new Error('ไม่พบไลบรารี pdf.js — กรุณาโหลดหน้าใหม่');
-  }
-  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
-  pdfJsWorkerConfigured = true;
-}
-
-async function extractTextFromPdf(file) {
-  const arrayBuffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-  let fullText = '';
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
-    const text = await page.getTextContent();
-    fullText += text.items.map(item => item.str).join(' ');
-  }
-  return fullText;
-}
-
-function extractPoNumber(cleanText) {
-  const poMatch = cleanText.match(/เลขที่ใบสั่งซื้อ\s*[:|.-]?\s*([A-Z0-9]{6,})/i);
-  if (poMatch) return poMatch[1].trim();
-
-  const fallbackMatch = cleanText.match(/\b(26\d{6}|\d{8})\b/);
-  if (fallbackMatch) return fallbackMatch[1];
-
-  return null;
-}
-
-function extractVendorCode(cleanText) {
-  const vendorMatch = cleanText.match(/V\d{5,}/i);
-  return vendorMatch ? vendorMatch[0].toUpperCase() : null;
-}
-
-function findVendorName(vendorCode) {
-  if (!vendorCode) return null;
-  const match = allVendorMappings.find(v => (v.vendor_code || '').toUpperCase() === vendorCode);
-  return match ? match.vendor_name : null;
-}
-
-function sanitizeFileNamePart(str) {
-  // กันอักขระที่ใช้เป็นชื่อไฟล์ไม่ได้ (แต่คงภาษาไทย/อังกฤษ/ตัวเลขไว้)
-  return String(str).replace(/[\\/:*?"<>|]/g, '').trim();
-}
-
-function downloadPdfBlob(arrayBuffer, fileName) {
-  const blob = new Blob([arrayBuffer], { type: 'application/pdf' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = fileName;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  setTimeout(() => URL.revokeObjectURL(url), 4000);
-}
-
-function renderRenameStatus(index, state, fileName, detail) {
-  const list = $('renameStatusList');
-  let item = document.getElementById('renameStatus-' + index);
-
-  const icon = state === 'success'
-    ? '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>'
-    : state === 'error'
-    ? '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>'
-    : '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>';
-
-  const html = `
-    <span class="rename-status-icon">${icon}</span>
-    <span class="rename-status-name">${escapeHtml(fileName)}</span>
-    ${detail ? `<span class="rename-status-detail">${escapeHtml(detail)}</span>` : ''}
-  `;
-
-  if (item) {
-    item.className = 'rename-status-item is-' + state;
-    item.innerHTML = html;
-  } else {
-    item = document.createElement('div');
-    item.id = 'renameStatus-' + index;
-    item.className = 'rename-status-item is-' + state;
-    item.innerHTML = html;
-    list.appendChild(item);
-  }
-}
-
-async function processRenamePoFiles() {
-  if (renameSelectedFiles.length === 0) return;
-
-  const btn = $('renameProcessBtn');
-  const fileInput = $('renamePdfInput');
-  $('renameStatusList').innerHTML = '';
-  btn.disabled = true;
-  btn.classList.add('is-loading');
-
-  try {
-    ensurePdfJsWorker();
-  } catch (err) {
-    showToast(err.message, 'error');
-    btn.disabled = false;
-    btn.classList.remove('is-loading');
-    return;
-  }
-
-  // ให้แน่ใจว่าตาราง vendor mapping โหลดล่าสุดก่อนเริ่มจับคู่
-  if (!vendorMappingsLoaded) {
-    await loadVendorMappings();
-  }
-
-  let successCount = 0;
-  let errorCount = 0;
-
-  for (let i = 0; i < renameSelectedFiles.length; i++) {
-    const file = renameSelectedFiles[i];
-    renderRenameStatus(i, 'pending', file.name, 'กำลังอ่านไฟล์…');
-
-    try {
-      const arrayBuffer = await file.arrayBuffer();
-      const extractedText = await extractTextFromPdf(file);
-      const cleanText = extractedText.replace(/\s+/g, ' ');
-
-      const poNumber = extractPoNumber(cleanText);
-      const vendorCode = extractVendorCode(cleanText);
-      const vendorName = findVendorName(vendorCode);
-
-      if (!poNumber && !vendorCode) {
-        renderRenameStatus(i, 'error', file.name, 'ไม่พบเลข PO และรหัส Vendor ในไฟล์');
-        errorCount++;
-        continue;
-      }
-
-      const poPart = sanitizeFileNamePart(poNumber || 'UnknownPO');
-      const vendorPart = sanitizeFileNamePart(vendorName || vendorCode || 'UnknownVendor');
-      const newFileName = `${poPart}-${vendorPart}.pdf`;
-
-      downloadPdfBlob(arrayBuffer, newFileName);
-
-      const detailParts = [];
-      if (!poNumber) detailParts.push('ไม่พบเลข PO');
-      if (vendorCode && !vendorName) detailParts.push(`ไม่พบชื่อสำหรับรหัส ${vendorCode} ในตาราง Mapping`);
-      if (!vendorCode) detailParts.push('ไม่พบรหัส Vendor');
-
-      renderRenameStatus(i, 'success', newFileName, detailParts.join(' • '));
-      successCount++;
-    } catch (err) {
-      console.error('Rename PO error:', file.name, err);
-      renderRenameStatus(i, 'error', file.name, err.message || 'เกิดข้อผิดพลาดระหว่างประมวลผล');
-      errorCount++;
-    }
-  }
-
-  btn.disabled = false;
-  btn.classList.remove('is-loading');
-  fileInput.value = '';
-  renameSelectedFiles = [];
-  $('renameFileCount').hidden = true;
-  $('renameProcessBtn').disabled = true;
-
-  if (errorCount === 0) {
-    showToast(`ประมวลผลสำเร็จ ${successCount} ไฟล์`, 'success');
-  } else {
-    showToast(`สำเร็จ ${successCount} ไฟล์ / ผิดพลาด ${errorCount} ไฟล์`, successCount > 0 ? 'default' : 'error');
-  }
-}
+  if
